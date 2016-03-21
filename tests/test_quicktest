@@ -22,12 +22,12 @@ let _ =
     get_pool hosts
     >>= fun state ->
     find_or_create_mirage_vm state >>= fun (state,vm) ->
-    echo "Creating shared iSCSI SR";
-    get_iscsi_sr state
+    echo "Creating shared NFS SR";
+    get_sr state NFS
     >>= fun state ->
-    begin match state.iscsi_sr with
-    | Some (_, uuid) -> echo "iSCSI SR uuid: %s%!" uuid
-    | None -> echo "No iSCSI SR!"
+    begin match state.nfs_sr with
+    | Some (_, uuid) -> echo "NFS SR uuid: %s%!" uuid
+    | None -> echo "No NFS SR!"
     end;
     echo "Running quicktest...";
     match !?* (?|>) "%s" quicktest_cmd with

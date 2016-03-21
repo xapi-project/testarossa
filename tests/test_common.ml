@@ -20,9 +20,9 @@ type host = {
   uuid : bytes;
 }
 
-type iscsi_server = {
-  iscsi_ip : bytes;
-  iqn : bytes;
+type storage_server = {
+  storage_ip : bytes;
+  iscsi_iqn : bytes;
 }
 
 type state = {
@@ -34,8 +34,11 @@ type state = {
   master_session : bytes;
   pool_setup : bool;
   iscsi_sr : (bytes * bytes) option; (* reference * uuid *)
+  nfs_sr : (bytes * bytes) option; (* reference * uuid *)
   mirage_vm : bytes option; (* reference *)
 }
+
+type sr_type = NFS | ISCSI
 
 let update_box name =
   ?| (Printf.sprintf "vagrant box update %s" name)
@@ -48,7 +51,7 @@ let start_all m =
 let setup_infra () =
   let wwn = ?|> "vagrant ssh infrastructure -c \"/scripts/get_wwn.py\"" |> trim in
   let ip = ?|> "vagrant ssh infrastructure -c \"/scripts/get_ip.sh\"" |> trim in
-  {iqn=wwn; iscsi_ip=ip}
+  {iscsi_iqn=wwn; storage_ip=ip}
 
 
 let get_hosts m =
@@ -122,6 +125,7 @@ let setup_pool hosts =
     master_session = session_id;
     pool_setup = true;
     iscsi_sr = None;
+    nfs_sr = None;
     mirage_vm = None;
   }
 
@@ -150,6 +154,7 @@ let get_pool hosts =
       master_session = session_id;
       pool_setup = true;
       iscsi_sr = None;
+      nfs_sr = None;
       mirage_vm = None;
     }
   end else begin
@@ -160,12 +165,12 @@ let get_pool hosts =
 let create_iscsi_sr state =
   Printf.printf "Creating an ISCSI SR\n%!";
   let rpc = state.master_rpc in
-  let iscsi = setup_infra () in
+  let storage = setup_infra () in
   let session_id = state.master_session in
   Lwt.catch
     (fun () -> 
        SR.probe ~rpc ~session_id ~host:state.master
-         ~device_config:["target", iscsi.iscsi_ip; "targetIQN", iscsi.iqn]
+         ~device_config:["target", storage.storage_ip; "targetIQN", storage.iscsi_iqn]
          ~_type:"lvmoiscsi" ~sm_config:[])
     (fun e -> match e with
        | Api_errors.Server_error (_,[_;_;xml]) -> Lwt.return xml
@@ -177,7 +182,7 @@ let create_iscsi_sr state =
   let scsiid = xmlm |> member "iscsi-target" |> member "LUN" |> member "SCSIid" |> data_to_string in
   Printf.printf "SR Probed: SCSIid=%s\n%!" scsiid;
   SR.create ~rpc ~session_id ~host:state.master
-    ~device_config:["target", iscsi.iscsi_ip; "targetIQN", iscsi.iqn; "SCSIid", scsiid]
+    ~device_config:["target", storage.storage_ip; "targetIQN", storage.iscsi_iqn; "SCSIid", scsiid]
     ~_type:"lvmoiscsi" ~physical_size:0L ~name_label:"iscsi-sr"
     ~name_description:"" ~content_type:""
     ~sm_config:[] ~shared:true >>= fun ref ->
@@ -185,22 +190,46 @@ let create_iscsi_sr state =
   return (ref, uuid)
 
 
-let get_iscsi_sr state =
+let create_nfs_sr state =
+  Printf.printf "Creating an NFS SR\n%!";
   let rpc = state.master_rpc in
+  let storage = setup_infra () in
+  Printf.printf "server: '%s' serverpath: '/nfs'\n%!" storage.storage_ip;
   let session_id = state.master_session in
-  (match state.iscsi_sr with
-  | Some s -> Lwt.return s
-  | None ->
-    SR.get_all_records ~rpc ~session_id >>=
-    fun sr_ref_recs ->
-    let pred = fun (sr_ref, sr_rec) -> sr_rec.API.sR_type = "lvmoiscsi" in
-    if List.exists pred sr_ref_recs
-    then begin
-      let (rf, rc) = List.find pred sr_ref_recs in
-      Lwt.return (rf, rc.API.sR_uuid)
-    end else create_iscsi_sr state)
-  >>= fun (iscsi_sr_ref, iscsi_sr_uuid) ->
-  Lwt.return { state with iscsi_sr = Some (iscsi_sr_ref, iscsi_sr_uuid) }
+  SR.create ~rpc ~session_id ~host:state.master
+    ~device_config:["server", storage.storage_ip; "serverpath", "/nfs"]
+    ~_type:"nfs" ~physical_size:0L ~name_label:"nfs-sr"
+    ~name_description:"" ~content_type:""
+    ~sm_config:[] ~shared:true >>= fun ref ->
+  SR.get_uuid ~rpc ~session_id ~self:ref >>= fun uuid ->
+  return (ref, uuid)
+
+
+let find_or_create_sr state ty =
+  let rpc,session_id = state.master_rpc,state.master_session in
+  let srty_of_ty = function
+    | ISCSI -> "lvmoiscsi"
+    | NFS -> "nfs"
+  in
+  SR.get_all_records ~rpc ~session_id >>= fun sr_ref_recs ->
+  let pred = fun (sr_ref, sr_rec) -> sr_rec.API.sR_type = (srty_of_ty ty) in
+  if List.exists pred sr_ref_recs
+  then begin
+    let (rf, rc) = List.find pred sr_ref_recs in
+    Lwt.return (rf, rc.API.sR_uuid)
+  end else begin
+    match ty with
+    | ISCSI -> create_iscsi_sr state
+    | NFS -> create_nfs_sr state
+  end
+
+
+let get_sr state ty =
+  match (ty, state.iscsi_sr, state.nfs_sr) with
+  | ISCSI, Some _, _  
+  | NFS, _, Some _ -> Lwt.return state
+  | ISCSI, _, _ -> find_or_create_sr state ty >>= fun s -> Lwt.return { state with iscsi_sr = Some s }
+  | NFS, _, _ -> find_or_create_sr state ty >>= fun s -> Lwt.return { state with nfs_sr = Some s }
 
 
 let find_template rpc session_id name =
@@ -242,6 +271,19 @@ let find_or_create_mirage_vm state =
     Lwt.return ({state with mirage_vm = Some vm}, vm)
   | [] ->
     create_mirage_vm state
+
+
+let get_control_domain state host =
+  let rpc = state.master_rpc in
+  let session_id = state.master_session in
+  Printf.printf "About to get all records...\n%!";
+  VM.get_all_records ~rpc ~session_id
+  >>= fun vms ->
+  Printf.printf "Finding control domain\n%!";
+  List.find
+    (fun (vm_ref, vm_rec) ->
+       vm_rec.API.vM_resident_on=host && vm_rec.API.vM_is_control_domain)
+    vms |> fst |> Lwt.return
 
 
 let run_and_self_destruct (t : 'a Lwt.t) : 'a =
