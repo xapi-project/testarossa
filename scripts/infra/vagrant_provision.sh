@@ -4,7 +4,11 @@ set -e
 set -x
 
 yum clean all
-yum install -y targetcli python-rtslib nfs-utils
+# NB LVM is only here because there was a problem
+# upgrading device-mapper without explicitly upgrading
+# lvm2. A transient problem, probably, so worth taking
+# out later
+yum install -y lvm2 targetcli python-rtslib nfs-utils
 modprobe target_core_mod
 modprobe iscsi_target_mod
 mkdir -p /var/target/pr/ /nfs
