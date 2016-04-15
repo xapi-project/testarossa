@@ -15,31 +15,31 @@ let meg = Int64.mul 1024L 1024L
 let meg32 = Int64.mul meg 32L
 
 type host_state =
-  | Slave of bytes
+  | Slave of string
   | Master
 
 type host = {
-  name : bytes;
-  ip : bytes;
-  uuid : bytes;
+  name : string;
+  ip : string;
+  uuid : string;
 }
 
 type storage_server = {
-  storage_ip : bytes;
-  iscsi_iqn : bytes;
+  storage_ip : string;
+  iscsi_iqn : string;
 }
 
 type state = {
   hosts : host list;
-  pool : bytes; (* reference *)
-  master : bytes; (* reference *)
-  master_uuid : bytes; (* uuid *)
+  pool : string; (* reference *)
+  master : string; (* reference *)
+  master_uuid : string; (* uuid *)
   master_rpc : (Rpc.call -> Rpc.response Lwt.t);
-  master_session : bytes;
+  master_session : string;
   pool_setup : bool;
-  iscsi_sr : (bytes * bytes) option; (* reference * uuid *)
-  nfs_sr : (bytes * bytes) option; (* reference * uuid *)
-  mirage_vm : bytes option; (* reference *)
+  iscsi_sr : (string * string) option; (* reference * uuid *)
+  nfs_sr : (string * string) option; (* reference * uuid *)
+  mirage_vm : string option; (* reference *)
 }
 
 type sr_type = NFS | ISCSI
