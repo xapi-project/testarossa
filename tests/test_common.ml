@@ -1,5 +1,4 @@
 open Yorick
-open Lwt
 open Xen_api
 open Xen_api_lwt_unix
 
@@ -54,6 +53,9 @@ let rec seq n =
   in 
     loop [] n
 
+(** [fail msg] makes a thread fail *) 
+let fail msg = Lwt.fail (Failure msg) 
+
 let update_box name =
   ?| (sprintf "vagrant box update %s" name)
 
@@ -99,7 +101,7 @@ let get_state hosts =
          | Api_errors.Server_error("HOST_IS_SLAVE",[master]) ->
            printf "slave\n%!";
            Lwt.return (host, Slave master)
-         | e -> fail e)
+         | e -> Lwt.fail e)
   in Lwt_list.map_s get_host_state hosts
 
 
@@ -255,7 +257,6 @@ let get_sr state ty =
    * that has name [name] or fails with [Failure msg]
    *)
 let find_template rpc session_id name =
-  let fail msg = Lwt.fail (Failure msg) in
   VM.get_all_records rpc session_id >>= fun vms ->
   let is_template = function
     | _,  { API.vM_name_label    = name
@@ -289,19 +290,18 @@ let find_or_create_mirage_vm state path_to_kernel =
   VM.get_all_records_where ~rpc ~session_id ~expr:"field \"name__label\"=\"mirage\""
   >>= function
   | (vm,_)::_ -> Lwt.return ({state with mirage_vm = Some vm}, vm)
-  | [] -> create_mirage_vm state path_to_kernel
+  | []        -> create_mirage_vm state path_to_kernel
 
 
+(* not used *)
 let get_control_domain state host =
   let rpc = state.master_rpc in
   let session_id = state.master_session in
+  let is_control_domain (vm_ref, vm_rec) = 
+    vm_rec.API.vM_resident_on=host && vm_rec.API.vM_is_control_domain in
   printf "About to get all records...\n%!";
-  VM.get_all_records ~rpc ~session_id
-  >>= fun vms ->
+  VM.get_all_records ~rpc ~session_id >>= fun vms ->
   printf "Finding control domain\n%!";
-  List.find
-    (fun (vm_ref, vm_rec) ->
-       vm_rec.API.vM_resident_on=host && vm_rec.API.vM_is_control_domain)
-    vms |> fst |> Lwt.return
+  List.find is_control_domain vms |> fst |> Lwt.return
 
 
