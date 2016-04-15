@@ -58,16 +58,27 @@ To test the Vagrant setup, run
 $ vagrant up
 ```
 
-The tests are written using OCamlscript so they are just run like any
-executable script. For example, to run quicktest on a host use
+The tests are written using OCaml and compiled into a binary which then
+can be executed:
 
 ```sh
-$ tests/test_quicktest
+$ make
+$ test_quicktest.native
 ```
 
 This will update the Vagrant box to the latest build, install a CentOS
 infrastructure VM to expose an iSCSI target, spin up a XenServer VM,
 create an iSCSI SR and run `quicktest`.
+
+Currently there is only one test but it is easy to add more and to
+compile them to a binary.
+
+To clean up, do:
+
+```sh
+$ make clean
+```
+
 
 ## Extension
 
