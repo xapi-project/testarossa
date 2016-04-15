@@ -302,6 +302,6 @@ let get_control_domain state host =
   printf "About to get all records...\n%!";
   VM.get_all_records ~rpc ~session_id >>= fun vms ->
   printf "Finding control domain\n%!";
-  List.find is_control_domain vms |> fst |> Lwt.return
+  Lwt.wrap2 List.find is_control_domain vms >>= fun (x,_) -> Lwt.return x
 
 
