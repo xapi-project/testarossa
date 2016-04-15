@@ -36,7 +36,7 @@ let _ =
       >>= fun state ->
       begin match state.nfs_sr with
       | Some (_, uuid) -> echo "NFS SR uuid: %s%!" uuid
-      | None -> echo "No NFS SR!"
+      | None            -> echo "No NFS SR!"
       end;
       echo "Running quicktest...";
       match !?* (?|>) "%s" quicktest_cmd with
@@ -50,4 +50,4 @@ let _ =
         echo "Quicktest failed (exit code %d)" rc;
         exit rc;
     in
-      run_and_self_destruct thread
+      Lwt_main.run thread

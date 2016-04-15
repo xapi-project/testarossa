@@ -9,7 +9,10 @@ PKG += 		-pkg ssl
 PKG += 		-pkg lwt.ssl
 PKG += 		-pkg lwt.unix
 
-OCB_FLAGS 	= -use-ocamlfind -I tests -I scripts $(PKG)
+TAG += 		-tag annot
+TAG += 		-tag bin_annot
+
+OCB_FLAGS 	= -use-ocamlfind $(TAG) -I tests -I scripts $(PKG)
 OCB 		= ocamlbuild $(OCB_FLAGS)
 
 all:
