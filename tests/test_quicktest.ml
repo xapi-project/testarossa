@@ -1,7 +1,3 @@
-#!/usr/bin/env ocamlscript
-Ocaml.packs := ["lwt"; "xen-api-client.lwt"; "re"; "ezxmlm"];
-Ocaml.sources := ["../scripts/yorick.ml"; "test_common.ml"]
---
 open Yorick
 open Lwt
 open Xen_api
