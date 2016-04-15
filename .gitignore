@@ -1,2 +1,3 @@
 .vagrant/
 *.exe
+xs/boot/guest/xen-test-vm-*.xen.gz
