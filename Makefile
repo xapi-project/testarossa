@@ -15,8 +15,13 @@ TAG += 		-tag bin_annot
 OCB_FLAGS 	= -use-ocamlfind $(TAG) -I tests -I scripts $(PKG)
 OCB 		= ocamlbuild $(OCB_FLAGS)
 
-all:
+all: 		kernels
 		$(OCB) test_quicktest.native
 
 clean:
 		$(OCB) -clean
+
+kernels:
+		cd xs/boot/guest && bash xen-test-vm.sh 0.0.5
+
+.PHONY: all clean kernels
