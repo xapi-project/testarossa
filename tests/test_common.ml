@@ -11,8 +11,9 @@ let uri ip = sprintf "http://%s" ip
 let username = ref "root"
 let password = ref "xenroot"
 
-let meg = Int64.mul 1024L 1024L
-let meg32 = Int64.mul meg 32L
+
+let meg n = Int64.(mul 1024L @@ mul 1024L @@ of_int n)
+let meg32 = meg 32
 
 type host_state =
   | Slave of string
@@ -48,7 +49,7 @@ type sr_type = NFS | ISCSI
 (** [seq n] return a list of length [n] with members 1 .. n *)
 let rec seq n = 
   let rec loop lst = function
-  | 1 -> 1 :: lst
+  | 0 -> lst
   | n -> loop (n::lst) (n-1)
   in 
     loop [] n
@@ -250,45 +251,45 @@ let get_sr state ty =
   | NFS, _, _ -> find_or_create_sr state ty >>= fun s -> Lwt.return { state with nfs_sr = Some s }
 
 
+  (** [find template rpc session name] returns the first template
+   * that has name [name] or fails with [Failure msg]
+   *)
 let find_template rpc session_id name =
+  let fail msg = Lwt.fail (Failure msg) in
   VM.get_all_records rpc session_id >>= fun vms ->
-  let filtered = List.filter (fun (_, record) ->
-      (name = record.API.vM_name_label) &&
-      record.API.vM_is_a_template)
-      vms in
-  match filtered with
-  | [] -> Lwt.return None
-  | (x,_) :: _ -> Lwt.return (Some x)
+  let is_template = function
+    | _,  { API.vM_name_label    = name
+          ; API.vM_is_a_template = true 
+          } -> true
+    | _, _ -> false
+  in match List.filter is_template vms with
+  | []          -> fail (sprintf "No template named '%s' found" name)
+  | (x,_) :: _  -> return x
 
 
-let create_mirage_vm state =
+let create_mirage_vm state path_to_kernel =
   let rpc = state.master_rpc in
   let session_id = state.master_session in
-  find_template rpc session_id "Other install media" >>= fun template_opt ->
-  let template = 
-    match template_opt with
-    | Some vm -> vm
-    | None -> 
-      fprintf stderr "Failed to find suitable template";
-      failwith "No template"
-  in
+  find_template rpc session_id "Other install media" >>= fun template ->
   VM.clone rpc session_id template "mirage" >>= fun vm ->
   VM.provision rpc session_id vm >>= fun _ ->
-  VM.set_PV_kernel rpc session_id vm "/boot/guest/mir-suspend.xen.gz" >>= fun () ->
+  VM.set_PV_kernel rpc session_id vm path_to_kernel >>= fun () ->
   VM.set_HVM_boot_policy rpc session_id vm "" >>= fun () ->
-  VM.set_memory_limits ~rpc ~session_id ~self:vm ~static_min:meg32 ~static_max:meg32 ~dynamic_min:meg32 ~dynamic_max:meg32 >>= fun () ->
+  VM.set_memory_limits ~rpc ~session_id 
+    ~self:vm 
+    ~static_min:meg32 
+    ~static_max:meg32 
+    ~dynamic_min:meg32 
+    ~dynamic_max:meg32 >>= fun () ->
   Lwt.return ({state with mirage_vm = Some vm}, vm)
 
-let find_or_create_mirage_vm state =
+let find_or_create_mirage_vm state path_to_kernel =
   let rpc = state.master_rpc in
   let session_id = state.master_session in
   VM.get_all_records_where ~rpc ~session_id ~expr:"field \"name__label\"=\"mirage\""
   >>= function
-  | vmrefrec::_ ->
-    let vm = fst vmrefrec in
-    Lwt.return ({state with mirage_vm = Some vm}, vm)
-  | [] ->
-    create_mirage_vm state
+  | (vm,_)::_ -> Lwt.return ({state with mirage_vm = Some vm}, vm)
+  | [] -> create_mirage_vm state path_to_kernel
 
 
 let get_control_domain state host =
