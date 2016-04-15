@@ -3,7 +3,11 @@ open Lwt
 open Xen_api
 open Xen_api_lwt_unix
 
-let uri ip = Printf.sprintf "http://%s" ip
+let printf  = Printf.printf
+let sprintf = Printf.sprintf
+let fprintf = Printf.fprintf
+
+let uri ip = sprintf "http://%s" ip
 let username = ref "root"
 let password = ref "xenroot"
 
@@ -40,18 +44,32 @@ type state = {
 
 type sr_type = NFS | ISCSI
 
+
+(** [seq n] return a list of length [n] with members 1 .. n *)
+let rec seq n = 
+  let rec loop lst = function
+  | 1 -> 1 :: lst
+  | n -> loop (n::lst) (n-1)
+  in 
+    loop [] n
+
 let update_box name =
-  ?| (Printf.sprintf "vagrant box update %s" name)
+  ?| (sprintf "vagrant box update %s" name)
 
 let start_all m =
-  let hosts = Array.init m (fun i -> i+1) |> Array.to_list |> List.map (Printf.sprintf "host%d") in
-  ?| (Printf.sprintf "vagrant up %s infrastructure --parallel --provider=xenserver" (String.concat " " hosts))
+  let hosts = seq m |> List.map (sprintf "host%d") |> String.concat " " in
+    ?| (sprintf "vagrant up %s infrastructure --parallel --provider=xenserver" hosts)
 
 
 let setup_infra () =
-  let wwn = ?|> "vagrant ssh infrastructure -c \"/scripts/get_wwn.py\"" |> trim in
-  let ip = ?|> "vagrant ssh infrastructure -c \"/scripts/get_ip.sh\"" |> trim in
-  {iscsi_iqn=wwn; storage_ip=ip}
+  let wwn = 
+    ?|> "vagrant ssh infrastructure -c \"/scripts/get_wwn.py\"" 
+    |> trim in
+  let ip = 
+    ?|> "vagrant ssh infrastructure -c \"/scripts/get_ip.sh\"" 
+    |> trim 
+  in
+    {iscsi_iqn=wwn; storage_ip=ip}
 
 
 let get_hosts m =
@@ -59,10 +77,10 @@ let get_hosts m =
     match
       ?|> "vagrant ssh host%d -c \"/scripts/get_public_ip.sh\"" n |> trim |> Stringext.split ~on:','
     with
-    | [uuid; ip] -> {name=(Printf.sprintf "host%d" n); ip; uuid}
+    | [uuid; ip] -> {name=(sprintf "host%d" n); ip; uuid}
     | _ -> failwith "Failed to get host's uuid and IP"
   in
-  List.map get_host (Array.init m (fun i -> i+1) |> Array.to_list)
+    List.map get_host (seq m)
 
 
 let get_state hosts =
@@ -70,33 +88,33 @@ let get_state hosts =
     let rpc = make (uri host.ip) in
     Lwt.catch
       (fun () ->
-         Printf.printf "Checking host %s (ip=%s)..." host.name host.ip;
-         Session.login_with_password rpc "root" "xenroot" "1.0" "testarossa" >>=
+         printf "Checking host %s (ip=%s)..." host.name host.ip;
+         Session.login_with_password rpc !username !password "1.0" "testarossa" >>=
          fun _ ->
-         Printf.printf "master\n%!";
+         printf "master\n%!";
          Lwt.return (host,Master))
       (fun e ->
          match e with
          | Api_errors.Server_error("HOST_IS_SLAVE",[master]) ->
-           Printf.printf "slave\n%!";
+           printf "slave\n%!";
            Lwt.return (host, Slave master)
          | e -> fail e)
   in Lwt_list.map_s get_host_state hosts
 
 
 let setup_pool hosts =
-  Printf.printf "Pool is not set up: Making it\n%!";
+  printf "Pool is not set up: Making it\n%!";
   Lwt_list.map_p (fun host ->
       let rpc = make (uri host.ip) in
-      Session.login_with_password rpc "root" "xenroot" "1.0" "testarossa"
+      Session.login_with_password rpc !username !password "1.0" "testarossa"
       >>= fun sess ->
       Lwt.return (rpc,sess)) hosts
   >>= fun rss ->
   let slaves = List.tl rss in
   Lwt_list.iter_p (fun (rpc,session_id) ->
       Pool.join ~rpc ~session_id ~master_address:(List.hd hosts).ip
-        ~master_username:"root" ~master_password:"xenroot") slaves >>= fun () ->
-  Printf.printf "All slaves told to join: waiting for all to be enabled\n%!";
+        ~master_username:!username ~master_password:!password) slaves >>= fun () ->
+  printf "All slaves told to join: waiting for all to be enabled\n%!";
   let rpc,session_id = List.hd rss in
   let rec wait () =
     Host.get_all_records ~rpc ~session_id >>= fun hrefrec ->
@@ -105,7 +123,7 @@ let setup_pool hosts =
     else return ()
   in wait ()
   >>= fun () ->
-  Printf.printf "Everything enabled. Sleeping 10 seconds to prevent a race\n%!";
+  printf "Everything enabled. Sleeping 10 seconds to prevent a race\n%!";
   (* Nb. the following sleep is to prevent a race between SR.create and
      thread_zero plugging all PBDs *)
   Lwt_unix.sleep 30.0 >>= fun () ->
@@ -136,7 +154,7 @@ let get_pool hosts =
   then begin
     let master = fst (List.find (fun (_,s) -> s=Master) host_states) in
     let rpc = make (uri master.ip) in
-    Session.login_with_password rpc "root" "xenroot" "1.0" "testarossa"
+    Session.login_with_password rpc !username !password "1.0" "testarossa"
     >>= fun session_id ->
     Pool.get_all ~rpc ~session_id >>=
     fun pools ->
@@ -163,7 +181,7 @@ let get_pool hosts =
 
 
 let create_iscsi_sr state =
-  Printf.printf "Creating an ISCSI SR\n%!";
+  printf "Creating an ISCSI SR\n%!";
   let rpc = state.master_rpc in
   let storage = setup_infra () in
   let session_id = state.master_session in
@@ -174,13 +192,13 @@ let create_iscsi_sr state =
          ~_type:"lvmoiscsi" ~sm_config:[])
     (fun e -> match e with
        | Api_errors.Server_error (_,[_;_;xml]) -> Lwt.return xml
-       | e -> Printf.printf "Got another error: %s\n" (Printexc.to_string e);
+       | e -> printf "Got another error: %s\n" (Printexc.to_string e);
          Lwt.return "<bad>")
   >>= fun xml ->
   let open Ezxmlm in
   let (_,xmlm) = from_string xml in
   let scsiid = xmlm |> member "iscsi-target" |> member "LUN" |> member "SCSIid" |> data_to_string in
-  Printf.printf "SR Probed: SCSIid=%s\n%!" scsiid;
+  printf "SR Probed: SCSIid=%s\n%!" scsiid;
   SR.create ~rpc ~session_id ~host:state.master
     ~device_config:["target", storage.storage_ip; "targetIQN", storage.iscsi_iqn; "SCSIid", scsiid]
     ~_type:"lvmoiscsi" ~physical_size:0L ~name_label:"iscsi-sr"
@@ -191,10 +209,10 @@ let create_iscsi_sr state =
 
 
 let create_nfs_sr state =
-  Printf.printf "Creating an NFS SR\n%!";
+  printf "Creating an NFS SR\n%!";
   let rpc = state.master_rpc in
   let storage = setup_infra () in
-  Printf.printf "server: '%s' serverpath: '/nfs'\n%!" storage.storage_ip;
+  printf "server: '%s' serverpath: '/nfs'\n%!" storage.storage_ip;
   let session_id = state.master_session in
   SR.create ~rpc ~session_id ~host:state.master
     ~device_config:["server", storage.storage_ip; "serverpath", "/nfs"]
@@ -251,7 +269,7 @@ let create_mirage_vm state =
     match template_opt with
     | Some vm -> vm
     | None -> 
-      Printf.fprintf stderr "Failed to find suitable template";
+      fprintf stderr "Failed to find suitable template";
       failwith "No template"
   in
   VM.clone rpc session_id template "mirage" >>= fun vm ->
@@ -276,10 +294,10 @@ let find_or_create_mirage_vm state =
 let get_control_domain state host =
   let rpc = state.master_rpc in
   let session_id = state.master_session in
-  Printf.printf "About to get all records...\n%!";
+  printf "About to get all records...\n%!";
   VM.get_all_records ~rpc ~session_id
   >>= fun vms ->
-  Printf.printf "Finding control domain\n%!";
+  printf "Finding control domain\n%!";
   List.find
     (fun (vm_ref, vm_rec) ->
        vm_rec.API.vM_resident_on=host && vm_rec.API.vM_is_control_domain)
