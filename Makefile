@@ -24,7 +24,7 @@ clean:
 kernels:
 		cd xs/boot/guest && bash xen-test-vm.sh 0.0.5
 
-% use this to quickly infer an MLI file: 
+# use this to quickly infer an MLI file: 
 %.mli: 		%.ml
 		$(OCB) $(*).inferred.mli
 
