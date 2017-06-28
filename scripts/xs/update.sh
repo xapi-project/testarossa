@@ -4,36 +4,36 @@ sudo rpm -ivh --force --nodeps /rpms/*.rpm || true
 
 rm /etc/sysconfig/network-scripts/ifcfg-eth0
 
-service forkexecd start
-chkconfig forkexecd on
-service xcp-networkd start
-chkconfig xcp-networkd on
-service genptoken start
-chkconfig genptoken on
-service squeezed start
-chkconfig squeezed on
-service xcp-rrdd start
-chkconfig xcp-rrdd on
-service xenopsd-xc start
-chkconfig xenopsd-xc on
-service xapi start
-chkconfig xapi on
+systemctl start forkexecd.service
+systemctl enable forkexecd.service 2>/dev/null
+systemctl start xcp-networkd.service
+systemctl enable xcp-networkd.service 2>/dev/null
+systemctl start genptoken.service
+systemctl enable genptoken.service 2>/dev/null
+systemctl start squeezed.service
+systemctl enable squeezed.service 2>/dev/null
+systemctl start xcp-rrdd.service
+systemctl enable xcp-rrdd.service 2>/dev/null
+systemctl start xenopsd-xc.service
+systemctl enable xenopsd-xc.service 2>/dev/null
+systemctl start xapi.service
+systemctl enable xapi.service 2>/dev/null
 
-sleep 30
+sleep 5
 
-service xcp-rrdd-plugins start
-chkconfig xcp-rrdd-plugins on
-service xs-firstboot start
+#systemctl start xcp-rrdd-plugins
+#systemctl enable xcp-rrdd-plugins
+systemctl start xs-firstboot
 #service perfmon start
 #chkconfig perfmon on
 
 . /etc/xensource-inventory
 xe pif-scan host-uuid=${INSTALLATION_UUID}
 PIF=$(xe pif-list device=eth0 params=uuid --minimal)
-xe pif-reconfigure-ip uuid=${PIF} mode=dhcp
-xe pif-plug uuid=${PIF}
+#xe pif-reconfigure-ip uuid=${PIF} mode=dhcp
+#xe pif-plug uuid=${PIF}
 pif=`sudo xe pif-list device=eth1 --minimal`
-sudo xe pif-reconfigure-ip uuid=$pif mode=dhcp
+#sudo xe pif-reconfigure-ip uuid=$pif mode=dhcp
 sudo xe pif-param-set uuid=$pif other-config:defaultroute=true other-config:peerdns=true
 sudo xe pif-unplug uuid=$pif
 sudo xe pif-plug uuid=$pif

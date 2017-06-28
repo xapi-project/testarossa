@@ -4,7 +4,7 @@
 # Vagrantfile API/syntax version. Don't touch unless you know what you're doing!
 VAGRANTFILE_API_VERSION = "2"
 
-LOCAL_BRANCH = ENV.fetch("LOCAL_BRANCH", "trunk-ring3")
+LOCAL_BRANCH = ENV.fetch("LOCAL_BRANCH", "feature-qemu-datapath")
 
 Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
 # Disable default synced folder
@@ -20,24 +20,47 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
 
   (1..3).each do |i|
     config.vm.define "host#{i}" do |host|
-      host.vm.box = "jonludlam/xs-#{LOCAL_BRANCH}"
+      host.vm.box = "jonludlam/#{LOCAL_BRANCH}"
       host.vm.provision "shell",
         inline: "hostname host#{i}; echo host#{i} > /etc/hostname"
-      host.vm.synced_folder "xs/rpms", "/rpms", type: "rsync", rsync__args: ["--verbose", "--archive", "-z", "--copy-links"]
-      host.vm.synced_folder "xs/opt", "/opt", type: "rsync", rsync__args: ["--verbose", "--archive", "-z", "--copy-links"]
-      host.vm.synced_folder "xs/sbin", "/sbin", type: "rsync", rsync__args: ["--verbose", "--archive", "-z", "--copy-links"]
-      host.vm.synced_folder "xs/bin", "/bin", type: "rsync", rsync__args: ["--verbose", "--archive", "-z", "--copy-links"]
-      host.vm.synced_folder "xs/boot", "/boot", type: "rsync", rsync__args: ["--verbose", "--archive", "-z", "--copy-links"]
-      host.vm.synced_folder "scripts/xs", "/scripts", type: "rsync", rsync__args: ["--verbose", "--archive", "-z", "--copy-links"]
+      folders = {'xs/rpms' => '/rpms',
+                 'xs/opt' => '/opt',
+                 'xs/sbin' => '/sbin',
+                 'xs/bin' => '/bin',
+                 'xs/boot' => '/boot',
+                 'scripts/xs' => '/scripts'}
+      folders.each { |k,v| host.vm.synced_folder k, v, type: "rsync", rsync__args: ["--verbose", "--archive", "-z", "--copy-links"] }
 
       host.vm.provision "shell", path: "scripts/xs/update.sh"
       host.vm.network "public_network", bridge: "xenbr0"
-      host.vm.network "public_network", bridge: "xenbr1"
+#      host.vm.network "public_network", bridge: "xenbr1"
+    end
+  end
+
+# Defines cluster{1,2,3} for corosync investigation
+  (1..3).each do |i|
+    config.vm.define "cluster#{i}" do |host|
+      host.vm.box = "jonludlam/feature-qemu-datapath"
+      host.vm.network "public_network", bridge: "xenbr0"
+      host.vm.synced_folder "scripts", "/scripts", type:"rsync", rsync__args: ["--verbose", "--archive", "-z", "--copy-links"] 
+      host.vm.provision :ansible do |ansible|
+        ansible.groups = {
+          "cluster" => ["cluster1", "cluster2", "cluster3"],
+          "infrastructure" => ["infrastructure"]
+        }
+        ansible.limit = "cluster"
+#        ansible.verbose = "vvv"
+        ansible.playbook = "playbook.yml"
+      end
     end
   end
 
   config.vm.provider "xenserver" do |xs|
+    xs.use_himn = true
     xs.memory = 4096
+    xs.xs_host = "gandalf.uk.xensource.com"
+    xs.xs_username = "root"
+    xs.xs_password = "xenroot"
   end
 end
 

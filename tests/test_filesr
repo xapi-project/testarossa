@@ -1,0 +1,4 @@
+#!/bin/bash
+
+vagrant ssh cluster1 -c "sudo /scripts/test_filesr"
+

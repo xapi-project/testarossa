@@ -1,0 +1,24 @@
+#!/bin/bash
+
+# Example test script for the file SR
+# This should be run inside a XenServer-like host
+
+set -ex
+
+# Test SR details
+sruuid=`uuidgen`
+mkdir /sr
+
+pushd /usr/libexec/xapi-storage-script/volume/org.xen.xapi.storage.filebased
+
+uri=`./SR.create dbg1 $sruuid file:///sr myname "my description"`
+sr=`./SR.attach dbg2 $uri`
+
+vol_info=`./Volume.create dbg1 $sr vdiname1 vdidescription1 1000000`
+./SR.destroy dbg "/sr"
+
+rm -rf /sr
+
+
+
+
