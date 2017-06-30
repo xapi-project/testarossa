@@ -1,6 +1,7 @@
 #!/bin/bash
 set -e
-vagrant up cluster{1,2,3}
+vagrant up cluster{1,2,3} --no-provision
+vagrant provision cluster{1,2,3}
 
 
 echo "Cluster auth"

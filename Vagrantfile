@@ -44,14 +44,16 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
       host.vm.box = "jonludlam/feature-qemu-datapath"
       host.vm.network "public_network", bridge: "xenbr0"
       host.vm.synced_folder "scripts", "/scripts", type:"rsync", rsync__args: ["--verbose", "--archive", "-z", "--copy-links"]
-      host.vm.provision :ansible do |ansible|
-        ansible.groups = {
-          "cluster" => (1..N).map{|i| "cluster#{i}"},
-          "infrastructure" => ["infrastructure"]
-        }
-        ansible.limit = "cluster"
+      if i == N
+          host.vm.provision :ansible do |ansible|
+            ansible.groups = {
+              "cluster" => (1..N).map{|i| "cluster#{i}"},
+              "infrastructure" => ["infrastructure"]
+            }
+            ansible.limit = "cluster"
 #        ansible.verbose = "vvv"
-        ansible.playbook = "playbook.yml"
+            ansible.playbook = "playbook.yml"
+          end
       end
     end
   end
