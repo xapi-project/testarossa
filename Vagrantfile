@@ -38,19 +38,22 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
   end
 
 # Defines cluster{1,2,3} for corosync investigation
-  (1..3).each do |i|
+  N = 3
+  (1..N).each do |i|
     config.vm.define "cluster#{i}" do |host|
       host.vm.box = "jonludlam/feature-qemu-datapath"
       host.vm.network "public_network", bridge: "xenbr0"
-      host.vm.synced_folder "scripts", "/scripts", type:"rsync", rsync__args: ["--verbose", "--archive", "-z", "--copy-links"] 
-      host.vm.provision :ansible do |ansible|
-        ansible.groups = {
-          "cluster" => ["cluster1", "cluster2", "cluster3"],
-          "infrastructure" => ["infrastructure"]
-        }
-        ansible.limit = "cluster"
+      host.vm.synced_folder "scripts", "/scripts", type:"rsync", rsync__args: ["--verbose", "--archive", "-z", "--copy-links"]
+      if i == N
+          host.vm.provision :ansible do |ansible|
+            ansible.groups = {
+              "cluster" => (1..N).map{|i| "cluster#{i}"},
+              "infrastructure" => ["infrastructure"]
+            }
+            ansible.limit = "cluster"
 #        ansible.verbose = "vvv"
-        ansible.playbook = "playbook.yml"
+            ansible.playbook = "playbook.yml"
+          end
       end
     end
   end
