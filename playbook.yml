@@ -11,6 +11,8 @@
     - name: dhcp eth1
       shell: |
         ip addr show dev eth1 primary | grep inet || dhclient eth1
+    - name: gather facts again
+      setup:
     - name: install pacemaker stuff
       yum: name="{{ item }}" state=latest enablerepo=base
       with_items:
