@@ -16,7 +16,7 @@ vagrant ssh cluster1 -c "sudo pcs cluster auth -u hacluster -p mysecurepassword 
 echo "Cluster setup"
 echo "============="
 
-vagrant ssh cluster1 -c "sudo pcs cluster setup --name cluster $HOSTS"
+vagrant ssh cluster1 -c "sudo pcs cluster setup --name cluster $HOSTS --auto_tie_breaker=1"
 vagrant ssh cluster1 -c "sudo pcs stonith sbd enable"
 
 echo "Cluster start"
