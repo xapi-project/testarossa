@@ -1,5 +1,21 @@
 ---
-- hosts: all
+# Need to setup networking as a separate play, otherwise ansible_default_ipv4 stays unset
+- hosts: cluster
+  become: true
+  become_method: sudo
+  remote_user: root
+  tasks:
+    - name: set eth1 to dhcp
+      copy:
+        content: |
+          DEVICE=eth1
+          BOOTPROTO=dhcp
+          ONBOOT=yes
+        dest: /etc/sysconfig/network-scripts/ifcfg-eth1
+    - name: bring eth1 up
+      command: ifup eth1
+      when: not (ansible_eth1.ipv4 is defined and ansible_eth1.ipv4.address is defined)
+- hosts: cluster
   become: true
   become_method: sudo
   become_user: root
@@ -8,9 +24,6 @@
       shell: |
        hostname "{{inventory_hostname}}"
        echo "{{inventory_hostname}}" > /etc/hostname
-    - name: dhcp eth1
-      shell: |
-        ip addr show dev eth1 primary | grep inet || dhclient eth1
     - name: install pacemaker stuff
       yum: name="{{ item }}" state=latest enablerepo=base
       with_items:
