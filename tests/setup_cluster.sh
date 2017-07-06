@@ -3,6 +3,8 @@ set -e
 vagrant up cluster{1,2,3} --no-provision
 vagrant provision cluster{1,2,3}
 
+# workaround NilClass exception
+vagrant up infrastructure || vagrant up infrastructure
 
 echo "Cluster auth"
 echo "============"

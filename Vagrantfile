@@ -48,7 +48,7 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
           host.vm.provision :ansible do |ansible|
             ansible.groups = {
               "cluster" => (1..N).map{|i| "cluster#{i}"},
-              "infrastructure" => ["infrastructure"]
+              "infra" => ["infrastructure"]
             }
             ansible.limit = "cluster"
 #        ansible.verbose = "vvv"

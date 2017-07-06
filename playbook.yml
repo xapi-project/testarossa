@@ -80,6 +80,14 @@
       systemd: name="{{ item }}" state=started enabled=yes
       with_items:
         - pcsd
+
+    - meta: flush_handlers # run all handlers, e.g. if initiatorname was changed
+    - name: setup local iSCSI
+      open_iscsi:
+        portal: "{{hostvars['infrastructure'].ansible_ssh_host}}"
+        login: yes
+        discover: yes
+        show_nodes: yes
   handlers:
       - name: save iptables
         command: service iptables save
