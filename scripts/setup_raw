@@ -1,0 +1,54 @@
+#!/bin/bash
+set -e
+set -x
+
+echo "Creating corosync configuration"
+echo "==============================="
+systemctl stop pcsd
+
+cat >/etc/corosync/corosync.conf <<EOF
+totem {
+    version: 2
+    secauth: off
+    cluster_name: cluster
+    transport: udpu
+}
+
+nodelist {
+EOF
+
+i=1
+for host in $*; do
+    i=$(($i+1))
+    cat >>/etc/corosync/corosync.conf <<EOF
+    node {
+        ring0_addr: $host
+        nodeid: $i
+    }
+EOF
+done
+
+cat >>/etc/corosync/corosync.conf <<EOF
+}
+
+quorum {
+    provider: corosync_votequorum
+    auto_tie_breaker: 1
+}
+
+logging {
+    to_logfile: yes
+    logfile: /var/log/cluster/corosync.log
+    to_syslog: yes
+}
+EOF
+
+corosync -t
+
+echo "Starting cluster"
+echo "================"
+systemctl enable corosync pacemaker
+systemctl start corosync pacemaker
+
+# Start pcsd again
+systemctl start pcsd

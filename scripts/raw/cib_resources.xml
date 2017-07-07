@@ -1,0 +1,16 @@
+<resources>
+  <clone id="dlm-clone">
+    <primitive class="ocf" id="dlm" provider="pacemaker" type="controld">
+      <instance_attributes id="dlm-instance_attributes"/>
+      <operations>
+        <op id="dlm-start-interval-0s" interval="0s" name="start" timeout="90"/>
+        <op id="dlm-stop-interval-0s" interval="0s" name="stop" timeout="100"/>
+        <op id="dlm-monitor-interval-30s" interval="30s" name="monitor" on-fail="fence"/>
+      </operations>
+    </primitive>
+    <meta_attributes id="dlm-clone-meta_attributes">
+      <nvpair id="dlm-clone-meta_attributes-interleave" name="interleave" value="true"/>
+      <nvpair id="dlm-clone-meta_attributes-ordered" name="ordered" value="true"/>
+    </meta_attributes>
+  </clone>
+</resources>
