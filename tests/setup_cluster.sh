@@ -26,3 +26,19 @@ vagrant ssh cluster1 -c "sudo pcs cluster enable --all"
 vagrant ssh cluster1 -c "sudo pcs cluster start --all"
 vagrant ssh cluster1 -c "sudo pcs property set no-quorum-policy=freeze"
 vagrant ssh cluster1 -c "sudo pcs resource create dlm ocf:pacemaker:controld op monitor interval=30s on-fail=fence clone interleave=true ordered=true"
+vagrant ssh cluster1 -c "sudo pcs property set stonith-watchdog-timeout=10s"
+vagrant ssh cluster1 -c "sudo pcs resource create xapi_master_slave ocf:pacemaker:Stateful --master meta resource-stickiness=100 requires=quorum multiple-active=stop_start"
+vagrant ssh cluster1 -c "sudo pcs resource create xapi_unique_master ocf:pacemaker:Stateful meta resource-stickiness=100 requires=quorum multiple-active=stop_start"
+while ! vagrant ssh cluster1 -c "sudo crm_mon -1" | grep Masters; do
+    echo retrying
+done
+vagrant ssh cluster2 -c "sudo pcs cluster stop --force"
+for h in $HOSTS; do
+    vagrant ssh $h -c "sudo cat /run/*.state" || true
+done
+vagrant ssh cluster1 -c "sudo pcs cluster stop --force"
+for h in $HOSTS; do
+    vagrant ssh $h -c "sudo cat /run/*.state" || true
+done
+vagrant ssh cluster3 -c "sudo crm_mon -1"
+vagrant ssh cluster3 -c "sudo cat /run/*.state"
