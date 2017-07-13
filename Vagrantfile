@@ -19,6 +19,28 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
   end
 
   (1..3).each do |i|
+    config.vm.define "honolulu#{i}" do |host|
+      host.vm.box = "jonludlam/release-honolulu-master"
+      folders = {'xs/rpms' => '/rpms',
+                 'xs/opt' => '/opt',
+                 'xs/sbin' => '/sbin',
+                 'xs/bin' => '/bin',
+                 'xs/boot' => '/boot',
+                 'scripts/xs' => '/scripts'}
+      folders.each { |k,v| host.vm.synced_folder k, v, type: "rsync", rsync__args: ["--verbose", "--archive", "-z", "--copy-links"] }
+      host.vm.network "public_network", bridge: "xenbr0"
+      host.vm.provision "shell", path: "scripts/xs/update.sh"
+      host.vm.provision :ansible do |ansible|
+        ansible.groups = {
+	  "honolulu" => (1..3).map{|i| "honolulu#{i}"}
+	}
+	ansible.limit = "honolulu"
+	ansible.playbook = "playbook.yml"
+      end
+    end
+  end
+
+  (1..3).each do |i|
     config.vm.define "host#{i}" do |host|
       host.vm.box = "jonludlam/#{LOCAL_BRANCH}"
       host.vm.provision "shell",
@@ -33,7 +55,7 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
 
       host.vm.provision "shell", path: "scripts/xs/update.sh"
       host.vm.network "public_network", bridge: "xenbr0"
-#      host.vm.network "public_network", bridge: "xenbr1"
+      host.vm.network "public_network", bridge: "xenbr1"
     end
   end
 

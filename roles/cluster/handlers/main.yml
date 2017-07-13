@@ -1,0 +1,4 @@
+- name: save iptables
+  command: service iptables save
+- name: restart iscsid
+  service: name=iscsid state=restarted 

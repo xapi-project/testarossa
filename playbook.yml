@@ -3,90 +3,16 @@
   become: true
   become_method: sudo
   become_user: root
-  tasks:
-    # set unique values-
-    - name: Create hostvars dump
-      action: template src=templates/checkvars.j2 dest=/tmp/ansible.var
-    - name: set hostname
-      shell: |
-       hostname "{{inventory_hostname}}"
-       echo "{{inventory_hostname}}" > /etc/hostname
-      when: ansible_hostname != inventory_hostname
-    - name: read iSCSI initiator name
-      command: cat /etc/iscsi/initiatorname.iscsi
-      register: iscsi_initiator
-    - name: set unique iSCSI initiator name
-      shell: echo "InitiatorName=$(/sbin/iscsi-iname)" >/etc/iscsi/initiatorname.iscsi
-      when: iscsi_initiator == "InitiatorName=iqn.1994-05.com.redhat:a0b68f6592ea"
-      notify: restart iscsid
+  roles:
+  - xenserver-no-xapi
+  - common
+  - cluster
 
-    - name: set eth1 to dhcp
-      copy:
-        content: |
-          DEVICE=eth1
-          BOOTPROTO=dhcp
-          ONBOOT=yes
-        dest: /etc/sysconfig/network-scripts/ifcfg-eth1
-    - name: bring eth1 up
-      command: ifup eth1
-      when: not (ansible_eth1.ipv4 is defined and ansible_eth1.ipv4.address is defined)
-    - name: gather facts again
-      setup:
+- hosts: honolulu
+  become: true
+  become_method: sudo
+  become_user: root
+  roles:
+  - { role: xenserver, device="eth1" }
+  - common
 
-    # create shared config files
-    - name: Build hosts file
-      lineinfile: dest=/etc/hosts regexp='.*{{ item }}$' line="{{ hostvars[item].ansible_default_ipv4.address }} {{item}}" state=present
-      when: hostvars[item].ansible_default_ipv4 is defined and hostvars[item].ansible_default_ipv4.address is defined
-      with_items: "{{ groups['all'] }}"
-
-    # Note: if upgrading a live system would need to stop the cluster or at least disable fencing first
-    - name: install pacemaker stuff
-      yum: name="{{ item }}" state=latest enablerepo=base,updates
-      with_items:
-        - corosync
-        - dlm
-        - pcs
-        - pacemaker
-        - fence-agents-all
-        - sbd
-        - iptables-services
-
-    - name: load watchdog module on boot
-      lineinfile:
-        dest: /etc/modules-load.d/watchdog.conf
-        line: xen_wdt
-        state: present
-        create: true
-    - name: load watchdog now
-      modprobe:
-          name: xen_wdt
-          state: present
-
-    - name: add hacluster user
-      user:
-        name: hacluster
-        shell: /bin/bash
-        password: $6$3Vsv/USdPcUl$ShL19F/R7QcTvgZxvgzLhNRn5Dspme06srj565UiQfYa2Q94or1qCBxjeb1XepAqVdHD7WzWm66CO0cFWFgaE/
-
-    - name: Flush firewall
-      iptables: flush=true
-      notify:
-        - save iptables
-
-    - name: start services
-      systemd: name="{{ item }}" state=started enabled=yes
-      with_items:
-        - pcsd
-
-    - meta: flush_handlers # run all handlers, e.g. if initiatorname was changed
-    - name: setup local iSCSI
-      open_iscsi:
-        portal: "{{hostvars['infrastructure'].ansible_ssh_host}}"
-        login: yes
-        discover: yes
-        show_nodes: yes
-  handlers:
-      - name: save iptables
-        command: service iptables save
-      - name: restart iscsid
-        service: name=iscsid state=restarted
