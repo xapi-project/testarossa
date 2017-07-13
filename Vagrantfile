@@ -82,7 +82,7 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
 
   config.vm.provider "xenserver" do |xs|
     xs.use_himn = true
-    xs.memory = 4096
+    xs.memory = 1024
     xs.xs_host = "gandalf.uk.xensource.com"
     xs.xs_username = "root"
     xs.xs_password = "xenroot"
