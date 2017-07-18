@@ -17,7 +17,6 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
     infra.vm.provision "shell", path: "scripts/infra/vagrant_provision.sh"
     infra.vm.synced_folder "scripts/infra", "/scripts", type: "rsync", rsync__args: ["--verbose", "--archive", "-z", "--copy-links"]
     infra.vm.network "public_network", bridge: "xenbr0"
-    infra.vm.network "public_network", bridge: "xenbr1"
     config.vm.provider "xenserver" do |xs|
         xs.name = "#{USER}/infrastructure/#{infra.vm.box}"
     end
