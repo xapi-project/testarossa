@@ -1,0 +1,75 @@
+#!/usr/bin/env ocamlscript
+Ocaml.packs := ["unix"; "unix-fcntl.unix"; "io-page-unix"; "extunix"];;
+--
+
+type prepared = {
+  fd : Unix.file_descr;
+  fallocated : bool;
+  initial_size : int64;
+}
+
+let pagesize = 4096L
+
+let truncate_open_file ?(fallocate=false) name size =
+  if Int64.rem size pagesize <> 0L then
+    invalid_arg (Printf.sprintf "size must be multiple of pagesize: %Ld" size);
+  let open Fcntl.Oflags in
+  let fd = Fcntl_unix.open_ name [O_CREAT; O_DIRECT; O_RDWR] ~perms:0o600 in
+  Unix.LargeFile.ftruncate fd size;
+  if fallocate then
+    ExtUnixSpecific.LargeFile.fallocate fd 0L size;
+  {
+    fd; fallocated = fallocate; initial_size = size
+  }
+
+let time_loop n f =
+  let prev = ref (Unix.gettimeofday ()) in
+  let times = Array.make n 0. in
+  for i = 0 to n-1 do
+    f i;
+    let now = Unix.gettimeofday () in
+    times.(i) <- now -. !prev;
+    prev := now
+  done;
+  let fmin = Array.fold_left min infinity times in
+  let fmax = Array.fold_left max 0. times in
+  let sum = Array.fold_left (+.) 0. times in
+  let avg = sum /. (float n) in
+  Printf.printf "min: %.3fs; max: %.3fs; avg: %.3fs\n" fmin fmax avg
+
+let time_cmd msg f =
+  print_endline msg;
+  flush stdout;
+  let t0 = Unix.gettimeofday () in
+  f ();
+  let t1 = Unix.gettimeofday () in
+  Printf.printf "%s took %.3fs\n%!" msg (t1 -. t0)
+
+let write_loop t =
+  let buf = Io_page.(get 1 |> to_cstruct) in
+  let data = Cstruct.to_bigarray buf in
+  Gc.full_major ();
+  Cstruct.memset buf 0x42;
+  let op i =
+    Cstruct.LE.set_uint32 buf 0 (Int32.of_int i);
+    ExtUnixSpecific.BA.all_pwrite t.fd 0 data |> ignore in
+  time_cmd "Obtaining write lock" (fun () ->
+      Unix.lockf t.fd Unix.F_LOCK 0);
+  time_loop 1000 op;
+  (* not strictly necessary, closing the file would have same effect *)
+  time_cmd "Releasing lock" (fun () ->
+      Unix.lockf t.fd Unix.F_ULOCK 0)
+
+(* automate:
+
+  * restore from snapshot if available
+   * setup cluster with vagrant/ansible
+   * rename VMs
+   * shutdown/snapshot
+
+*)
+
+let () =
+  let t = truncate_open_file ~fallocate:true Sys.argv.(1) 4096L in
+  write_loop t;
+  Unix.close t.fd

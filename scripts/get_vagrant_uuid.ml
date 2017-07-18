@@ -1,18 +1,16 @@
 #!/usr/bin/env ocamlscript
 (* Get the UUID of a vagrant VM *)
-Ocaml.packs := ["lwt"; "xen-api-client.lwt"; "cmdliner"; "re"]
+Ocaml.packs := ["lwt"; "xen-api-client.lwt"; "cmdliner"; "re"; "ezxmlm"];;
+Ocaml.sources := ["yorick.ml"; "../tests/test_common.ml"]
 --
 open Lwt
 open Xen_api
 open Xen_api_lwt_unix
+open Test_common
 
 let uri = ref "http://gandalf.uk.xensource.com"
 let username = ref "root"
 let password = ref "xenroot"
-
-let lwt_read file = Lwt_io.lines_of_file file |> Lwt_stream.to_list
-    
-let get_ref name = lwt_read (Printf.sprintf ".vagrant/machines/%s/xenserver/id" name) >|= List.hd
 
 let main name =
   let rpc = make !uri in

@@ -43,26 +43,109 @@ type sr_type = NFS | ISCSI
 let update_box name =
   ?| (Printf.sprintf "vagrant box update %s" name)
 
-let start_all m =
-  let hosts = Array.init m (fun i -> i+1) |> Array.to_list |> List.map (Printf.sprintf "host%d") in
-  ?| (Printf.sprintf "vagrant up %s infrastructure --parallel --provider=xenserver" (String.concat " " hosts))
+(* TODO: if too many run them in groups, like XC *)
+let start_all prefix m =
+  let hosts = Array.init m (fun i -> i+1) |> Array.to_list |> List.map (Printf.sprintf "%s%d" prefix) in
+  let hosts = String.concat " " hosts in
+  ?| (Printf.sprintf "vagrant up %s infrastructure --parallel --provider=xenserver" hosts)
+    
+let initialize_all prefix m =
+  let hosts = Array.init m (fun i -> i+1) |> Array.to_list |> List.map (Printf.sprintf "%s%d" prefix) in
+  let hosts = String.concat " " hosts in
+  (* assuming we only have ansible and shell provisioners *)
+  ?| (Printf.sprintf "vagrant up %s infrastructure --parallel --provider=xenserver --provision-with=shell" hosts);
+  (* ansible requires all hosts to be up already *)
+  ?| (Printf.sprintf "vagrant up %s infrastructure --provision-with=ansible" hosts)
 
+let destroy_all prefix m =
+  let hosts = Array.init m (fun i -> i+1) |> Array.to_list |> List.map (Printf.sprintf "%s%d" prefix) in
+  ?| (Printf.sprintf "vagrant destroy %s infrastructure" (String.concat " " hosts))
+    
+let provision_all prefix m =
+  let hosts = Array.init m (fun i -> i+1) |> Array.to_list |> List.map (Printf.sprintf "%s%d" prefix) in
+  ?| (Printf.sprintf "vagrant provision %s" (String.concat " " hosts))
 
 let setup_infra () =
   let wwn = ?|> "vagrant ssh infrastructure -c \"/scripts/get_wwn.py\"" |> trim in
   let ip = ?|> "vagrant ssh infrastructure -c \"/scripts/get_ip.sh\"" |> trim in
   {iscsi_iqn=wwn; storage_ip=ip}
 
+let run_script ~host ~script =
+  echo "Running %S on %s" script host;
+  ?| (Printf.sprintf "vagrant ssh %s -c \"sudo /scripts/%s\"" host script)
 
-let get_hosts m =
+let get_hosts prefix m =
   let get_host n =
     match
-      ?|> "vagrant ssh host%d -c \"/scripts/get_public_ip.sh\"" n |> trim |> Stringext.split ~on:','
+      ?|> "vagrant ssh %s%d -c \"/scripts/get_public_ip.sh\"" prefix n |> trim |> Stringext.split ~on:','
     with
-    | [uuid; ip] -> {name=(Printf.sprintf "host%d" n); ip; uuid}
+    | [uuid; ip] -> {name=(Printf.sprintf "%s%d" prefix n); ip; uuid}
     | _ -> failwith "Failed to get host's uuid and IP"
   in
   List.map get_host (Array.init m (fun i -> i+1) |> Array.to_list)
+
+let lwt_read file = Lwt_io.lines_of_file file |> Lwt_stream.to_list
+let get_ref name = lwt_read (Printf.sprintf ".vagrant/machines/%s/xenserver/id" name) >|= List.hd
+
+let get_vm_ref prefix i =
+  get_ref (Printf.sprintf "%s%d" prefix i)
+
+type snapshot_config = {
+  machine: string;
+  cluster_max: int;
+  prefix: string;
+}
+
+let name_of_config conf name m =
+  Printf.sprintf "testarossa/%s/%d/%d/%s/%s" conf.machine m conf.cluster_max conf.prefix name
+
+let vagrant_shutdown name =
+  ?| (Printf.sprintf "vagrant ssh %s -c \"sudo shutdown -P now\"" name)
+
+let vagrant_sync name =
+  ?| (Printf.sprintf "vagrant ssh %s -c \"sync\"" name)
+
+let snapshot_all conf ?(consistent=false) m ~new_name =
+  let new_name = name_of_config conf new_name m in
+  let rpc = make (uri conf.machine) in
+  Session.login_with_password rpc !username !password "1.0" "testarossa" >>=
+  fun session_id ->
+  let snapshot_host name =
+    get_ref name >>= fun vm ->
+    begin if consistent then
+      Lwt_preemptive.detach vagrant_sync name
+    else Lwt.return_unit
+    end >>= fun () ->
+    VM.snapshot ~rpc ~session_id ~vm ~new_name >>= fun id ->
+    Lwt.return id
+  in
+  "infrastructure" ::
+  (Array.init m (fun i -> Printf.sprintf "%s%d" conf.prefix (i+1)) |> Array.to_list) |>
+  Lwt_list.map_p snapshot_host
+
+let revert_all conf m ~snapshot_name =
+  let rpc = make (uri conf.machine) in
+  let expected_name = name_of_config conf snapshot_name m in
+  Session.login_with_password rpc !username !password "1.0" "testarossa" >>=
+  fun session_id ->
+
+  let is_ours snapshot =
+    VM.get_name_label ~rpc ~session_id ~self:snapshot >|= fun name ->
+    name = expected_name
+  in
+
+  let revert_host name =
+    get_ref name >>= fun vm ->
+    echo "Getting list of snapshot for VM %s" vm;
+    VM.get_snapshots ~rpc ~session_id ~self:vm >>= fun snapshots ->
+    Lwt_list.filter_p is_ours snapshots >>= fun snapshots ->
+    let snapshot = List.hd snapshots in
+    echo "Reverting VM %s to clean snapshot %s" vm snapshot;
+    VM.revert ~rpc ~session_id ~snapshot
+  in
+  "infrastructure" ::
+  (Array.init m (fun i -> Printf.sprintf "%s%d" conf.prefix (i+1)) |> Array.to_list) |>
+  Lwt_list.iter_p revert_host
 
 
 let get_state hosts =
@@ -301,3 +384,8 @@ let run_and_self_destruct (t : 'a Lwt.t) : 'a =
     )
   in
   Lwt_main.run t'
+
+let kill_children_at_exit () =
+  at_exit (fun () ->
+      let term = 15 in
+      Unix.kill 0 term)

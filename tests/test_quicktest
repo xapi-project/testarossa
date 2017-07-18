@@ -15,10 +15,10 @@ let _ =
     echo "Udpating vagrant box to latest version";
     update_box "host1";
     echo "Starting up host";
-    start_all 1;
+    start_all "host" 1;
     echo "Setting up infrastructure VM for iSCSI export";
     let _ = setup_infra () in
-    let hosts = get_hosts 1 in
+    let hosts = get_hosts "host" 1 in
     get_pool hosts
     >>= fun state ->
     find_or_create_mirage_vm state >>= fun (state,vm) ->

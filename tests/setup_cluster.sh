@@ -2,8 +2,7 @@
 set -x
 set -e
 
-# workaround NilClass exception
-vagrant up infrastructure || vagrant up infrastructure
+vagrant up infrastructure
 
 HOSTS=$(vagrant status |  grep ^cluster |cut -f1 -d' '|xargs echo)
 vagrant up $HOSTS
@@ -22,7 +21,7 @@ vagrant ssh cluster1 -c "sudo pcs stonith sbd enable"
 echo "Cluster start"
 echo "============="
 
-vagrant ssh cluster1 -c "sudo pcs cluster enable --all"
+vagrant ssh cluster1 -c "sudo pcs cluster enable --all" || true
 vagrant ssh cluster1 -c "sudo pcs cluster start --all"
 vagrant ssh cluster1 -c "sudo pcs property set no-quorum-policy=freeze"
 vagrant ssh cluster1 -c "sudo pcs resource create dlm ocf:pacemaker:controld op monitor interval=30s on-fail=fence clone interleave=true ordered=true"
@@ -32,13 +31,7 @@ vagrant ssh cluster1 -c "sudo pcs resource create xapi_unique_master ocf:pacemak
 while ! vagrant ssh cluster1 -c "sudo crm_mon -1" | grep Masters; do
     echo retrying
 done
-vagrant ssh cluster2 -c "sudo pcs cluster stop --force"
+vagrant ssh cluster1 -c "sudo mkfs.gfs2 -O -t cluster:gfs2_demo -p lock_dlm -j 3 /dev/disk/by-path/ip-169*-0"
 for h in $HOSTS; do
-    vagrant ssh $h -c "sudo cat /run/*.state" || true
+    vagrant ssh $h -c "sudo mount -t gfs2 -o noatime,nodiratime /dev/disk/by-path/ip-169*-0 /mnt"
 done
-vagrant ssh cluster1 -c "sudo pcs cluster stop --force"
-for h in $HOSTS; do
-    vagrant ssh $h -c "sudo cat /run/*.state" || true
-done
-vagrant ssh cluster3 -c "sudo crm_mon -1"
-vagrant ssh cluster3 -c "sudo cat /run/*.state"
