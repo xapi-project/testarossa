@@ -7,6 +7,12 @@ VAGRANTFILE_API_VERSION = "2"
 LOCAL_BRANCH = ENV.fetch("LOCAL_BRANCH", "feature-qemu-datapath")
 
 USER = ENV.fetch("USER")
+folders = {'xs/rpms' => '/rpms',
+           'xs/opt' => '/opt',
+           'xs/sbin' => '/sbin',
+           'xs/bin' => '/bin',
+           'xs/boot' => '/boot',
+           'scripts' => '/scripts'}
 
 Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
 # Disable default synced folder
@@ -23,14 +29,25 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
   end
 
   (1..3).each do |i|
+    config.vm.define "ely#{i}" do |host|
+      host.vm.box = "jonludlam/ely"
+      folders.each { |k,v| host.vm.synced_folder k, v, type: "rsync", rsync__args: ["--verbose", "--archive", "-z", "--copy-links"] }
+      host.vm.network "public_network", bridge: "xenbr0"
+      host.vm.provision "shell", path: "scripts/xs/update.sh"
+      host.vm.provision :ansible do |ansible|
+        ansible.groups = {
+	  "honolulu" => (1..3).map{|i| "honolulu#{i}"},
+	  "ely" => (1..3).map{|i| "ely#{i}"}
+	}
+	ansible.limit = "ely"
+	ansible.playbook = "playbook.yml"
+      end
+    end
+  end
+
+  (1..3).each do |i|
     config.vm.define "honolulu#{i}" do |host|
       host.vm.box = "jonludlam/release-honolulu-master"
-      folders = {'xs/rpms' => '/rpms',
-                 'xs/opt' => '/opt',
-                 'xs/sbin' => '/sbin',
-                 'xs/bin' => '/bin',
-                 'xs/boot' => '/boot',
-                 'scripts/xs' => '/scripts'}
       folders.each { |k,v| host.vm.synced_folder k, v, type: "rsync", rsync__args: ["--verbose", "--archive", "-z", "--copy-links"] }
       host.vm.network "public_network", bridge: "xenbr0"
       host.vm.provision "shell", path: "scripts/xs/update.sh"
@@ -50,12 +67,6 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
       host.vm.box = "jonludlam/#{LOCAL_BRANCH}"
       host.vm.provision "shell",
         inline: "hostname host#{i}; echo #{hostname} > /etc/hostname"
-      folders = {'xs/rpms' => '/rpms',
-                 'xs/opt' => '/opt',
-                 'xs/sbin' => '/sbin',
-                 'xs/bin' => '/bin',
-                 'xs/boot' => '/boot',
-                 'scripts/xs' => '/scripts'}
       folders.each { |k,v| host.vm.synced_folder k, v, type: "rsync", rsync__args: ["--verbose", "--archive", "-z", "--copy-links"] }
 
       host.vm.provision "shell", path: "scripts/xs/update.sh"
@@ -75,6 +86,7 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
     config.vm.define hostname do |host|
       host.vm.box = "jonludlam/#{LOCAL_BRANCH}"
       host.vm.network "public_network", bridge: "xenbr0"
+      folders.each { |k,v| host.vm.synced_folder k, v, type: "rsync", rsync__args: ["--verbose", "--archive", "-z", "--copy-links"] }
       host.vm.synced_folder "scripts", "/scripts", type:"rsync", rsync__args: ["--verbose", "--archive", "-z", "--copy-links"]
       config.vm.provider "xenserver" do |xs|
         xs.name = "#{USER}/#{hostname}/#{host.vm.box}"

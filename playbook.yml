@@ -16,3 +16,10 @@
   - { role: xenserver, device="eth1" }
   - common
 
+- hosts: ely
+  become: true
+  become_method: sudo
+  become_user: root
+  roles:
+  - { role: xenserver, device="eth1" }
+  - common
