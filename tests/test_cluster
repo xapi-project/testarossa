@@ -140,7 +140,7 @@ let update_arg =
   Arg.(value & flag & info ~doc ["update"])
 
 
-let default_host = "gandalf.uk.xensource.com"
+let default_host = "perfuk-01-10.xenrt.citrite.net"
 
 let conf_arg =
   let machine_arg =
