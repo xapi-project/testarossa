@@ -4,6 +4,7 @@
 # Expects xapi-clusterd to be running on each node.
 #
 
+from nose import with_setup
 import os
 import subprocess
 import json
@@ -44,6 +45,30 @@ def assert_null(s):
 def get_ip(host):
     return ssh_cmd(host, "sudo ip addr show dev eth1 | grep 'state UP' -A2 | tail -n1 | awk '{print $2}' | cut -f1  -d'/'")
 
+def create_cluster(node):
+    print "Create cluster on node %s" % (node['hostname'])
+
+    stdout = ssh_cmd(node['hostname'], "sudo /opt/xcli create '%s'" % (json.dumps(node)))
+    if stdout.startswith('['):
+        print >>sys.stderr, "CLI command failed"
+        sys.exit(1)
+
+    secret = stdout[2:-1]
+    print "Secret token was '%s'" % (secret)
+    return secret
+
+def join_node(node, secret, existing):
+    print "Join node %s to the cluster" % (node['hostname'])
+    assert_null(ssh_cmd(node['hostname'], "sudo /opt/xcli join %s '%s' '%s'" % (secret, json.dumps(node), json.dumps(existing))))
+
+def shutdown_node(node):
+    print "Shut down node %s" % (node['hostname'])
+    assert_null(ssh_cmd(node['hostname'], "sudo /opt/xcli shutdown"))
+
+def destroy_node(node):
+    print "Destroy node %s" % (node['hostname'])
+    assert_null(ssh_cmd(node['hostname'], "sudo /opt/xcli destroy"))
+
 print "Get node eth1 IP addresses"
 c1 = get_ip("cluster1")
 c2 = get_ip("cluster2")
@@ -56,35 +81,32 @@ m1 = {"hostname":"cluster1", "addresses":[c1]}
 m2 = {"hostname":"cluster2", "addresses":[c2]}
 m3 = {"hostname":"cluster3", "addresses":[c3]}
 
-print "Destroy any existing configuration"
-ssh_cmd("cluster1", "sudo /opt/xcli destroy")
-ssh_cmd("cluster2", "sudo /opt/xcli destroy")
-ssh_cmd("cluster3", "sudo /opt/xcli destroy")
+def setup():
+    print "Destroy any existing configuration"
+    ssh_cmd("cluster1", "sudo /opt/xcli destroy")
+    ssh_cmd("cluster2", "sudo /opt/xcli destroy")
+    ssh_cmd("cluster3", "sudo /opt/xcli destroy")
 
-print "Create cluster on node 1 (%s)" % (c1)
+def tear_down():
+    pass
 
-stdout = ssh_cmd("cluster1", "sudo /opt/xcli create '%s'" % (json.dumps(m1)))
-if stdout.startswith('['):
-    print >>sys.stderr, "CLI command failed"
-    sys.exit(1)
-existing = [m1]
+@with_setup(setup, tear_down)
+def test_three_nodes():
+    secret = create_cluster(m1)
+    existing = [m1]
+    join_node(m2, secret, existing)
+    existing.append(m2)
+    join_node(m3, secret, existing)
+    existing.append(m3)
 
-secret = stdout[2:-1]
-print "Secret token was '%s'" % (secret)
-
-print "Join node 2 (%s) to the cluster" % (c2)
-assert_null(ssh_cmd("cluster2", "sudo /opt/xcli join %s '%s' '%s'" % (secret, json.dumps(m2), json.dumps(existing))))
-existing.append(m2)
-
-print "Join node 3 (%s) to the cluster" % (c3)
-assert_null(ssh_cmd("cluster3", "sudo /opt/xcli join %s '%s' '%s'" % (secret, json.dumps(m3), json.dumps(existing))))
-existing.append(m3)
-
-print "Shut down node 2 (%s)" % (c2)
-assert_null(ssh_cmd("cluster2", "sudo /opt/xcli shutdown"))
-
-print "Shut down node 3 (%s)" % (c3)
-assert_null(ssh_cmd("cluster3", "sudo /opt/xcli shutdown"))
-
-print "Destroy node 1 (%s)" % (c1)
-assert_null(ssh_cmd("cluster1", "sudo /opt/xcli destroy"))
+@with_setup(setup, tear_down)
+def test_two_shutdowns():
+    secret = create_cluster(m1)
+    existing = [m1]
+    join_node(m2, secret, existing)
+    existing.append(m2)
+    join_node(m3, secret, existing)
+    existing.append(m3)
+    shutdown_node(m2)
+    shutdown_node(m3)
+    destroy_node(m1)
