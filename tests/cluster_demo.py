@@ -69,6 +69,15 @@ def destroy_node(node):
     print "Destroy node %s" % (node['hostname'])
     assert_null(ssh_cmd(node['hostname'], "/opt/xcli destroy"))
 
+def get_diagnostics(node):
+    return ssh_cmd(node['hostname'], "/opt/xcli diagnostics")
+
+def get_nodeid(node):
+    output = get_diagnostics(node)
+    nodeid = [x.split(" ")[3] for x in output.split('\n') if x.startswith("Local node id:")][0]
+    print "Node ID for %s is %s" % (node['hostname'], nodeid)
+    return nodeid
+
 print "Get node eth1 IP addresses"
 c1 = get_ip("cluster1")
 c2 = get_ip("cluster2")
@@ -81,32 +90,59 @@ m1 = {"hostname":"cluster1", "addresses":[c1]}
 m2 = {"hostname":"cluster2", "addresses":[c2]}
 m3 = {"hostname":"cluster3", "addresses":[c3]}
 
-def setup():
+def destroy_existing():
     print "Destroy any existing configuration"
     destroy_node(m1)
     destroy_node(m2)
     destroy_node(m3)
 
-def tear_down():
+def create_two_node_cluster():
+    destroy_existing()
+    print "Set up 2-node cluster"
+    global secret
+    secret = create_cluster(m1)
+    existing = [m1]
+    join_node(m2, secret, existing)
+    existing.append(m2)
+    return existing
+
+def create_three_node_cluster():
+    existing = create_two_node_cluster()
+    join_node(m3, secret, existing)
+    existing.append(m3)
+    return existing
+
+def no_setup():
     pass
 
-@with_setup(setup, tear_down)
-def test_three_nodes():
-    secret = create_cluster(m1)
-    existing = [m1]
-    join_node(m2, secret, existing)
-    existing.append(m2)
-    join_node(m3, secret, existing)
-    existing.append(m3)
+def no_teardown():
+    pass
 
-@with_setup(setup, tear_down)
+@with_setup(create_two_node_cluster, no_teardown)
+def test_nodeids_stable_over_join():
+    """Check node IDs are stable over node-join"""
+    n1 = get_nodeid(m1)
+    n2 = get_nodeid(m2)
+    join_node(m3, secret, [m1, m2])
+    n1b = get_nodeid(m1)
+    n2b = get_nodeid(m2)
+    print "Node ids were {%s, %s} and are now {%s, %s}" % (n1, n2, n1b, n2b)
+    assert (n1==n1b)
+    assert (n2==n2b)
+
+@with_setup(create_three_node_cluster, no_teardown)
+def test_nodeids_unique():
+    """Check node IDs are unique"""
+    n1 = get_nodeid(m1)
+    n2 = get_nodeid(m2)
+    n3 = get_nodeid(m3)
+    print "Node ids are {%s, %s, %s}" % (n1, n2, n3)
+    assert (n1 <> n2)
+    assert (n1 <> n3)
+
+@with_setup(create_three_node_cluster, no_teardown)
 def test_two_shutdowns():
-    secret = create_cluster(m1)
-    existing = [m1]
-    join_node(m2, secret, existing)
-    existing.append(m2)
-    join_node(m3, secret, existing)
-    existing.append(m3)
+    """Check two shutdowns and a destroy work"""
     shutdown_node(m2)
     shutdown_node(m3)
     destroy_node(m1)
