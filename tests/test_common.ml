@@ -72,7 +72,28 @@ let setup_infra () =
 
 let run_script ~host ~script =
   echo "Running %S on %s" script host;
-  ?| (Printf.sprintf "vagrant ssh %s -c \"sudo /scripts/%s\"" host script)
+  ?|> "vagrant ssh %s -c \"sudo /scripts/%s\"" host script |> trim
+
+let get_ip host =
+  ?|> "vagrant ssh %s -c \"/scripts/get_eth1_ip.sh\"" host |> trim
+
+let setup_cluster_one ~host =
+  let ip = get_ip host in
+  ?|> "vagrant ssh %s -c \"/opt/xcli create '{\\\"hostname\\\":\\\"%s\\\",\\\"addresses\\\":[\\\"%s\\\"]}'\"" host host ip |> trim
+
+let get_iscsi_device ~host =
+  let iscsi_ip = "169.254.0.16" in (* TODO *)
+  ?|> "vagrant ssh %s -c \"/usr/bin/ls --color=none -1 /dev/disk/by-path/ip-%s:3260-*-0\"" host iscsi_ip |> trim
+
+let mkfs_gfs2 ~host ~device =
+  let cluster_name = "xapi-cluster" in
+  let fs_name = "gfs" in
+  let num_journals = 4 in (* TODO 16? *)
+  ?|> "vagrant ssh %s -c \"/usr/sbin/mkfs.gfs2 -O -t %s:%s -p lock_dlm -j %d %s\"" host cluster_name fs_name num_journals device |> trim
+
+let mount_gfs2 ~host ~device =
+  let mountpoint = "/mnt" in
+  ?|> "vagrant ssh %s -c \"/usr/bin/mount -t gfs2 -o noatime,nodiratime %s %s\"" host device mountpoint |> trim
 
 let get_hosts prefix m =
   let get_host n =

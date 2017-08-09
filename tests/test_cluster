@@ -46,13 +46,24 @@ let prepare conf =
 let sequential_join_remove conf =
   let n = conf.cluster_max in
   echo "Setting up cluster on 1st node";
-  run_script ~host:"cluster1" ~script:"setup_cluster_one.sh";
+  let secret = setup_cluster_one ~host:"cluster1" in
+  echo "secret is [%s]" secret;
+
+  let device = get_iscsi_device ~host:"cluster1" in
+  echo "Mounting GFS2 on 1st node from %s" device;
+  let stdout = mkfs_gfs2 ~host:"cluster1" ~device in
+  echo " - stdout from mkfs.gfs2 was [%s]" stdout;
+  let stdout = mount_gfs2 ~host:"cluster1" ~device in
+  echo " - stdout from mount was [%s]" stdout;
+
+  let ips = ref [get_ip "cluster1"] in
 
   echo "Joining nodes sequentially";
   for i = 2 to n do
     let node = Printf.sprintf "cluster%d" i in
-    run_script ~host:node ~script:"destroy_cluster.sh";
-    run_script ~host:"cluster1" ~script:("join_cluster.sh " ^ node);
+    ignore (run_script ~host:node ~script:"destroy_cluster.sh");
+    run_script ~host:node ~script:(Printf.sprintf "join_cluster.sh %s %s" secret (String.concat " " !ips));
+    ips := (get_ip node) :: !ips;
   done;
 
  (* TODO: sanity checks pcs cluster status consistent, etc.
