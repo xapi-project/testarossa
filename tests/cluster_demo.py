@@ -35,7 +35,7 @@ def generate_ssh_config():
 def ssh_cmd(host, cmd):
     if not os.path.exists(ssh_config_file):
         generate_ssh_config()
-    ssh = ["ssh", "-F", ssh_config_file, host, cmd]
+    ssh = ["ssh", "-F", ssh_config_file, host, "sudo", cmd]
     print " * Executing on %s: %s" % (host, cmd)
     return execute(ssh)
 
@@ -43,12 +43,12 @@ def assert_null(s):
     assert s=='N'
 
 def get_ip(host):
-    return ssh_cmd(host, "sudo ip addr show dev eth1 | grep 'state UP' -A2 | tail -n1 | awk '{print $2}' | cut -f1  -d'/'")
+    return ssh_cmd(host, "ip addr show dev eth1 | grep 'state UP' -A2 | tail -n1 | awk '{print $2}' | cut -f1  -d'/'")
 
 def create_cluster(node):
     print "Create cluster on node %s" % (node['hostname'])
 
-    stdout = ssh_cmd(node['hostname'], "sudo /opt/xcli create '%s'" % (json.dumps(node)))
+    stdout = ssh_cmd(node['hostname'], "/opt/xcli create '%s'" % (json.dumps(node)))
     if stdout.startswith('['):
         print >>sys.stderr, "CLI command failed"
         sys.exit(1)
@@ -59,15 +59,15 @@ def create_cluster(node):
 
 def join_node(node, secret, existing):
     print "Join node %s to the cluster" % (node['hostname'])
-    assert_null(ssh_cmd(node['hostname'], "sudo /opt/xcli join %s '%s' '%s'" % (secret, json.dumps(node), json.dumps(existing))))
+    assert_null(ssh_cmd(node['hostname'], "/opt/xcli join %s '%s' '%s'" % (secret, json.dumps(node), json.dumps(existing))))
 
 def shutdown_node(node):
     print "Shut down node %s" % (node['hostname'])
-    assert_null(ssh_cmd(node['hostname'], "sudo /opt/xcli shutdown"))
+    assert_null(ssh_cmd(node['hostname'], "/opt/xcli shutdown"))
 
 def destroy_node(node):
     print "Destroy node %s" % (node['hostname'])
-    assert_null(ssh_cmd(node['hostname'], "sudo /opt/xcli destroy"))
+    assert_null(ssh_cmd(node['hostname'], "/opt/xcli destroy"))
 
 print "Get node eth1 IP addresses"
 c1 = get_ip("cluster1")
@@ -83,9 +83,9 @@ m3 = {"hostname":"cluster3", "addresses":[c3]}
 
 def setup():
     print "Destroy any existing configuration"
-    ssh_cmd("cluster1", "sudo /opt/xcli destroy")
-    ssh_cmd("cluster2", "sudo /opt/xcli destroy")
-    ssh_cmd("cluster3", "sudo /opt/xcli destroy")
+    destroy_node(m1)
+    destroy_node(m2)
+    destroy_node(m3)
 
 def tear_down():
     pass
