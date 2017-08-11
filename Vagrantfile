@@ -4,7 +4,7 @@
 # Vagrantfile API/syntax version. Don't touch unless you know what you're doing!
 VAGRANTFILE_API_VERSION = "2"
 
-LOCAL_BRANCH = ENV.fetch("LOCAL_BRANCH", "feature-qemu-datapath")
+LOCAL_BRANCH = ENV.fetch("LOCAL_BRANCH", "private-edvint-clustering")
 
 USER = ENV.fetch("USER")
 folders = {'xs/rpms' => '/rpms',
@@ -88,7 +88,6 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
       host.vm.network "public_network", bridge: "xenbr0"
       folders.each { |k,v| host.vm.synced_folder k, v, type: "rsync", rsync__args: ["--verbose", "--archive", "-z", "--copy-links"] }
       host.vm.synced_folder "scripts", "/scripts", type:"rsync", rsync__args: ["--verbose", "--archive", "-z", "--copy-links"]
-      host.vm.synced_folder "xs/opt", "/opt", type:"rsync", rsync__args: ["--verbose", "--archive", "-z", "--copy-links"]
       config.vm.provider "xenserver" do |xs|
         xs.name = "#{USER}/#{hostname}/#{host.vm.box}"
       end

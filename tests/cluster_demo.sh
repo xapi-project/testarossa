@@ -26,12 +26,12 @@ echo "c2 = '$c2'"
 echo "c3 = '$c3'"
 
 echo "Destroy any existing configuration"
-$SSH cluster1 'sudo /opt/xcli destroy'
-$SSH cluster2 'sudo /opt/xcli destroy'
-$SSH cluster3 'sudo /opt/xcli destroy'
+$SSH cluster1 'sudo xcli destroy'
+$SSH cluster2 'sudo xcli destroy'
+$SSH cluster3 'sudo xcli destroy'
 
 echo "Create cluster on node 1 ($c1)"
-stdout=$($SSH cluster1 'sudo /opt/xcli create "{\"hostname\":\"cluster1\",\"addresses\":[\"'$c1'\"]}"')
+stdout=$($SSH cluster1 'sudo xcli create "{\"hostname\":\"cluster1\",\"addresses\":[\"'$c1'\"]}"')
 echo $stdout | grep '^\[' && (echo "CLI command failed"; exit 1)
 
 secret=$(echo $stdout | sed 's/^S(//' | sed 's/)$//')
@@ -39,21 +39,21 @@ secret=$(echo $stdout | sed 's/^S(//' | sed 's/)$//')
 echo "Secret token was '$secret'"
 
 echo "Join node 2 ($c2) to the cluster"
-stdout=$($SSH cluster2 "sudo /opt/xcli join $secret '{\"hostname\":\"cluster2\",\"addresses\":[\"$c2\"]}' '[{\"hostname\":\"cluster1\",\"addresses\":[\"$c1\"]}]'")
+stdout=$($SSH cluster2 "sudo xcli join $secret '{\"hostname\":\"cluster2\",\"addresses\":[\"$c2\"]}' '[{\"hostname\":\"cluster1\",\"addresses\":[\"$c1\"]}]'")
 echo $stdout | grep '^N$' || (echo "CLI command failed"; exit 1)
 
 echo "Join node 3 ($c3) to the cluster"
-stdout=$($SSH cluster3 "sudo /opt/xcli join $secret '{\"hostname\":\"cluster3\",\"addresses\":[\"$c3\"]}' '[{\"hostname\":\"cluster1\",\"addresses\":[\"$c1\"]}, {\"hostname\":\"cluster2\",\"addresses\":[\"$c2\"]}]'")
+stdout=$($SSH cluster3 "sudo xcli join $secret '{\"hostname\":\"cluster3\",\"addresses\":[\"$c3\"]}' '[{\"hostname\":\"cluster1\",\"addresses\":[\"$c1\"]}, {\"hostname\":\"cluster2\",\"addresses\":[\"$c2\"]}]'")
 echo $stdout | grep '^N$' || (echo "CLI command failed"; exit 1)
 
 echo "Shut down node 2 ($c2)"
-stdout=$($SSH cluster2 "sudo /opt/xcli shutdown")
+stdout=$($SSH cluster2 "sudo xcli shutdown")
 echo $stdout | grep '^N$' || (echo "CLI command failed"; exit 1)
 
 echo "Shut down node 3 ($c3)"
-stdout=$($SSH cluster3 "sudo /opt/xcli shutdown")
+stdout=$($SSH cluster3 "sudo xcli shutdown")
 echo $stdout | grep '^N$' || (echo "CLI command failed"; exit 1)
 
 echo "Destroy node 1 ($c1)"
-stdout=$($SSH cluster1 "sudo /opt/xcli destroy")
+stdout=$($SSH cluster1 "sudo xcli destroy")
 echo $stdout | grep '^N$' || (echo "CLI command failed"; exit 1)

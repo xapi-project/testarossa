@@ -79,7 +79,7 @@ let get_ip host =
 
 let setup_cluster_one ~host =
   let ip = get_ip host in
-  ?|> "vagrant ssh %s -c \"/opt/xcli create '{\\\"hostname\\\":\\\"%s\\\",\\\"addresses\\\":[\\\"%s\\\"]}'\"" host host ip |> trim
+  ?|> "vagrant ssh %s -c \"xcli create '{\\\"hostname\\\":\\\"%s\\\",\\\"addresses\\\":[\\\"%s\\\"]}'\"" host host ip |> trim
 
 let get_iscsi_device ~host =
   let iscsi_ip = "169.254.0.16" in (* TODO *)

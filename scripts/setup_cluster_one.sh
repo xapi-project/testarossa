@@ -16,7 +16,7 @@ echo "======================"
 
 # Set up the cluster with one node only
 ADDRS=$(echo $IP_ADDRS | sed 's/ /","/g')
-secret=$(/opt/xcli create '{"hostname":"'$NODE'","addresses":["'$ADDRS'"]}')
+secret=$(xcli create '{"hostname":"'$NODE'","addresses":["'$ADDRS'"]}')
 
 echo "Configure cluster resources on $NODE"
 echo "===================================="

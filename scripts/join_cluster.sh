@@ -14,7 +14,7 @@ existing=$2 # TODO should take all options passed in
 echo "Joining node $NODE to cluster on $existing (using secret $secret)"
 
 ADDRS=$(echo $IP_ADDRS | sed 's/ /","/g')
-/opt/xcli join $secret '{"hostname":"'$NODE'","addresses":["'$ADDRS'"]}' '[{"hostname":"","addresses":["'$existing'"]}]'
+xcli join $secret '{"hostname":"'$NODE'","addresses":["'$ADDRS'"]}' '[{"hostname":"","addresses":["'$existing'"]}]'
 
 echo "Mounting GFS2"
 mount -t gfs2 -o noatime,nodiratime /dev/disk/by-path/ip-169*-0 /mnt

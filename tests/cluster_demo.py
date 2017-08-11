@@ -48,7 +48,7 @@ def get_ip(host):
 def create_cluster(node):
     print "Create cluster on node %s" % (node['hostname'])
 
-    stdout = ssh_cmd(node['hostname'], "/opt/xcli create '%s'" % (json.dumps(node)))
+    stdout = ssh_cmd(node['hostname'], "xcli create '%s'" % (json.dumps(node)))
     if stdout.startswith('['):
         print >>sys.stderr, "CLI command failed"
         sys.exit(1)
@@ -59,18 +59,18 @@ def create_cluster(node):
 
 def join_node(node, secret, existing):
     print "Join node %s to the cluster" % (node['hostname'])
-    assert_null(ssh_cmd(node['hostname'], "/opt/xcli join %s '%s' '%s'" % (secret, json.dumps(node), json.dumps(existing))))
+    assert_null(ssh_cmd(node['hostname'], "xcli join %s '%s' '%s'" % (secret, json.dumps(node), json.dumps(existing))))
 
 def shutdown_node(node):
     print "Shut down node %s" % (node['hostname'])
-    assert_null(ssh_cmd(node['hostname'], "/opt/xcli shutdown"))
+    assert_null(ssh_cmd(node['hostname'], "xcli shutdown"))
 
 def destroy_node(node):
     print "Destroy node %s" % (node['hostname'])
-    assert_null(ssh_cmd(node['hostname'], "/opt/xcli destroy"))
+    assert_null(ssh_cmd(node['hostname'], "xcli destroy"))
 
 def get_diagnostics(node):
-    return ssh_cmd(node['hostname'], "/opt/xcli diagnostics")
+    return ssh_cmd(node['hostname'], "xcli diagnostics")
 
 def get_nodeid(node):
     output = get_diagnostics(node)
