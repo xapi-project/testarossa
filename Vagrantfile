@@ -4,7 +4,7 @@
 # Vagrantfile API/syntax version. Don't touch unless you know what you're doing!
 VAGRANTFILE_API_VERSION = "2"
 
-LOCAL_BRANCH = ENV.fetch("LOCAL_BRANCH", "private-edvint-clustering")
+LOCAL_BRANCH = ENV.fetch("LOCAL_BRANCH", "feature-clustering")
 
 USER = ENV.fetch("USER")
 folders = {'xs/rpms' => '/rpms',
@@ -108,7 +108,7 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
   config.vm.provider "xenserver" do |xs|
     xs.use_himn = true
     xs.memory = 1024
-    xs.xs_host = "perfuk-01-10.xenrt.citrite.net"
+    xs.xs_host = "gandalf.uk.xensource.com"
     xs.xs_username = "root"
     xs.xs_password = "xenroot"
   end
