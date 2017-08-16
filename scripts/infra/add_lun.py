@@ -7,8 +7,8 @@ ips = commands.getoutput("/sbin/ifconfig | grep -i \"inet\" | grep -iv \"inet6\"
 	"awk {'print $2'} | grep -v 127.0.0.1").splitlines()
 
 iscsi = rtslib_fb.FabricModule("iscsi")
-f = rtslib_fb.FileIOStorageObject("test1", "/tmp/test.img", 20000000000)
-f2 = rtslib_fb.FileIOStorageObject("test2", "/tmp/test2.img", 20000000000)
+f = rtslib_fb.FileIOStorageObject("test1", "/tmp/test.img", 2000000000)
+f2 = rtslib_fb.FileIOStorageObject("test2", "/tmp/test2.img", 2000000000)
 target = rtslib_fb.Target(iscsi)
 tpg = rtslib_fb.TPG(target,1)
 tpg.enable = True

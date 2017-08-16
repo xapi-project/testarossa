@@ -6,7 +6,6 @@
   roles:
   - xenserver-no-xapi
   - common
-  - cluster
 
 - hosts: honolulu
   become: true

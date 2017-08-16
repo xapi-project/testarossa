@@ -1,0 +1,178 @@
+#!/usr/bin/env ocamlscript
+Ocaml.packs := ["lwt.preemptive"; "threads"; "xen-api-client.lwt"; "cmdliner"; "re"; "ezxmlm"];
+Ocaml.sources := ["../scripts/yorick.ml"; "test_common.ml"];
+Ocaml.ocamlflags := ["-thread"]
+--
+
+open Yorick
+open Lwt
+open Xen_api
+open Xen_api_lwt_unix
+open Test_common
+
+let snapshot_name = "clean"
+
+let update_box () =
+  echo "Updating vagrant box to latest version";
+  update_box "infrastructure";
+  update_box "cluster1"
+
+type reset_mode = Force | Snapshot
+let reset_vms conf reset_mode =
+  (* TODO: determine current state, check whether we should start/stop/etc.
+     whether snapshot already exists, etc *)
+    begin if reset_mode = Snapshot then
+      let new_name = Printf.sprintf "before reset %f" (Unix.gettimeofday ()) in
+      (* start wouldn't be needed, but vagrant needs to know about the VM, it must be created at least *)
+      echo "Starting all VMs";
+      start_all "cluster" conf.cluster_max;
+      echo "Snapshotting VMs before reset";
+      snapshot_all conf ~new_name conf.cluster_max
+    else
+      Lwt.return []
+  end >>= fun _ ->
+    echo "Reseting all cluster & infrastructure VMs to snapshot";
+    revert_all conf conf.cluster_max ~snapshot_name >>= fun () ->
+    start_all "cluster" conf.cluster_max;
+    Lwt.return_unit
+
+let prepare conf =
+  echo "Starting up cluster";
+  initialize_all "cluster" conf.cluster_max;
+  echo "Snapshotting all VMs";
+  snapshot_all conf conf.cluster_max ~consistent:true ~new_name:snapshot_name >>= fun _ ->
+  Lwt.return_unit
+
+let sequential_join_remove conf =
+  let n = conf.cluster_max in
+  echo "Setting up cluster on 1st node";
+  let secret = setup_cluster_one ~host:"cluster1" in
+  echo "secret is [%s]" secret;
+
+  let device = get_iscsi_device ~host:"cluster1" in
+  echo "Mounting GFS2 on 1st node from %s" device;
+  let stdout = mkfs_gfs2 ~host:"cluster1" ~device in
+  echo " - stdout from mkfs.gfs2 was [%s]" stdout;
+  let stdout = mount_gfs2 ~host:"cluster1" ~device in
+  echo " - stdout from mount was [%s]" stdout;
+
+  let ips = ref [get_ip "cluster1"] in
+
+  echo "Joining nodes sequentially";
+  for i = 2 to n do
+    let node = Printf.sprintf "cluster%d" i in
+    ignore (run_script ~host:node ~script:"destroy_cluster.sh");
+    run_script ~host:node ~script:(Printf.sprintf "join_cluster.sh %s %s" secret (String.concat " " !ips));
+    ips := (get_ip node) :: !ips;
+  done;
+
+ (* TODO: sanity checks pcs cluster status consistent, etc.
+  had iptables problems where online/offline was not consistent
+ *)
+  echo "Removing nodes sequentially";
+  let last = Printf.sprintf "cluster%d" n in
+  for i = 1 to n-1 do
+    let node = Printf.sprintf "cluster%d" i in
+    run_script ~host:node ~script:"clean_remove.sh";
+    run_script ~host:last ~script:("remove_node.sh " ^ node);
+  done
+
+let run_test conf =
+  sequential_join_remove conf;
+  Lwt.return_unit
+
+type mode = Skip | Reset of reset_mode | Recreate | Destroy | Provision
+
+let main update mode conf =
+  kill_children_at_exit ();
+  if update then
+    update_box ();
+  run_and_self_destruct (begin match mode with
+  | Some (Reset reset_mode) ->
+    reset_vms conf reset_mode
+  | Some Recreate ->
+    echo "Destroying cluster";
+    destroy_all "cluster" conf.cluster_max;
+    prepare conf
+  | Some Destroy ->
+    echo "Destroying cluster";
+    destroy_all "cluster" conf.cluster_max;
+    exit 0
+  | Some Provision ->
+    provision_all "cluster" conf.cluster_max;
+    Lwt.return_unit
+  | None ->
+    prepare conf
+  | Some Skip ->  Lwt.return_unit
+  end >>= fun () ->
+  run_test conf)
+
+open Cmdliner
+
+let mode_arg =
+  let modes = [
+    ("skip-prepare", Skip),
+    "assumes the test environment is already prepared (VMs running),\
+     and skips straight to executing the tests.";
+
+    ("reset", Reset Snapshot),
+    "takes a snapshot of the cluster (to avoid loosing logs needed for debugging),
+     and resets all the cluster VMs to the first clean snapshot.";
+
+    ("force-reset", Reset Force),
+    "resets all the cluster VMs to the first clean snapshot, \
+     DELETING all the changes made inside the VMs.";
+
+    ("recreate", Recreate),
+    "destroy all vagrant cluster VMs (note: doesn't delete snapshots yet),\
+    recreate and reprovision them";
+
+    ("provision", Provision),
+    "rerun (ansible) provisioning on cluster nodes.";
+
+    ("destroy", Destroy),
+    "destroy all the cluster&infrastructure VMs."
+  ] in
+  let docv = "MODE" in
+  let doc =
+    Printf.sprintf "$(docv) must be %s. %s"
+      (Arg.doc_alts_enum (List.map fst modes))
+      (modes |> List.map (fun ((mode, _), mode_doc) ->
+           Printf.sprintf "%s mode %s" (Arg.doc_quote mode) mode_doc) |>
+      String.concat ". ")
+  in
+  Arg.(value & opt (modes |> List.map fst |> enum |> some) None & info ["mode"] ~docv ~doc)
+
+let update_arg =
+  let doc = "Update Vagrant boxes (pull new XVA builds).
+             By default we do not update the templates to make dev/debug easier.
+             Automated builds should always enable --update though."
+  in
+  Arg.(value & flag & info ~doc ["update"])
+
+
+let default_host = "perfuk-01-10.xenrt.citrite.net"
+
+let conf_arg =
+  let machine_arg =
+    let doc = "Xenserver host to use" in
+    Arg.(value & opt string default_host & info ["host"] ~doc)
+  in
+  let cluster_max_arg =
+    let doc = "Nodes in the cluster" in
+    let docv = "NODES" in
+    Arg.(value & opt int 5 & info ["n"] ~doc ~docv)
+  in
+  let open Test_common in 
+  let build_conf machine cluster_max = { machine; cluster_max; prefix = "cluster" } in
+  Term.(pure build_conf $ machine_arg $ cluster_max_arg)
+
+let main_t = Term.(pure main $ update_arg $ mode_arg $ conf_arg)
+
+let info =
+  let doc = "Run pcs cluster test" in
+  let man = [ `S "BUGS"; `P "Report bug on the github issue tracker" ] in
+  Term.info "test_cluster" ~version:"0.1" ~doc ~man
+
+let () =
+  Term.exit @@ Term.eval (main_t, info)

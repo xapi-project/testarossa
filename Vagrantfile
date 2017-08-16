@@ -4,7 +4,7 @@
 # Vagrantfile API/syntax version. Don't touch unless you know what you're doing!
 VAGRANTFILE_API_VERSION = "2"
 
-LOCAL_BRANCH = ENV.fetch("LOCAL_BRANCH", "feature-qemu-datapath")
+LOCAL_BRANCH = ENV.fetch("LOCAL_BRANCH", "feature-clustering")
 
 USER = ENV.fetch("USER")
 folders = {'xs/rpms' => '/rpms',
