@@ -1,7 +1,5 @@
 #!/bin/bash
 
-sudo rpm -ivh --force --nodeps /rpms/*.rpm || true
-
 rm /etc/sysconfig/network-scripts/ifcfg-eth0
 
 systemctl start forkexecd.service
