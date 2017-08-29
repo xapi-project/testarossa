@@ -12,6 +12,7 @@ folders = {'xs/rpms' => '/rpms',
            'xs/sbin' => '/sbin',
            'xs/bin' => '/bin',
            'xs/boot' => '/boot',
+	   'xs/usr/sbin' => '/usr/sbin',
            'scripts' => '/scripts'}
 
 Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
@@ -79,7 +80,7 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
   end
 
 # Defines cluster{1,2,3} for corosync investigation
-  N = 3
+  N = 16
   NAMES = Hash[ (1..N).map{|i| [i, "cluster#{i}"]} ]
   (1..N).each do |i|
     hostname = NAMES[i]
@@ -91,16 +92,14 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
       config.vm.provider "xenserver" do |xs|
         xs.name = "#{USER}/#{hostname}/#{host.vm.box}"
       end
-      if i == N
-          host.vm.provision :ansible do |ansible|
-            ansible.groups = {
+      host.vm.provision :ansible do |ansible|
+       ansible.groups = {
               "cluster" => NAMES.collect { |k, v| v },
               "infra" => ["infrastructure"]
-            }
-            ansible.limit = "cluster"
+       }
+       ansible.limit = "cluster"
 #        ansible.verbose = "vvv"
-            ansible.playbook = "playbook.yml"
-          end
+       ansible.playbook = "playbook.yml"
       end
     end
   end
