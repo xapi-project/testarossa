@@ -17,7 +17,6 @@
   register: find_result
 - name: Upgrade RPMs
   shell: |
-    rpm -Uvh --force "{{ item.path }}"
-    rm "{{ item.path }}"
+    rpm -Uvh --force "{{ item.path }}" --nodeps && rm "{{ item.path }}"
   with_items: "{{ find_result.files }}"
 
