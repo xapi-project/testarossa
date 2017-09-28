@@ -9,8 +9,8 @@ LOCAL_BRANCH = ENV.fetch("LOCAL_BRANCH", "feature-clustering")
 USER = ENV.fetch("USER")
 folders = {'xs/rpms' => '/rpms',
 #           'xs/opt' => '/opt',
-#           'xs/sbin' => '/sbin',
-#           'xs/bin' => '/bin',
+           'xs/sbin' => '/sbin',
+           'xs/bin' => '/bin',
 #           'xs/boot' => '/boot',
 #	   'xs/usr/sbin' => '/usr/sbin',
 #           'scripts' => '/scripts'

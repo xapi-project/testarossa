@@ -3,4 +3,7 @@
 - name: Run xapi-clusterd
   systemd: state=started enabled=yes name=xapi-clusterd
 
-
+# We are going to fence in the tests, make sure we don't loose all the
+# provisioning after a reboot
+- name: Sync
+  command: sync

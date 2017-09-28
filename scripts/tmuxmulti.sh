@@ -1,7 +1,7 @@
 #!/bin/sh
 # You must run this script from inside tmux!
 set -e
-WINDOW="$*"
+WINDOW="watch"
 CMD="$1"
 shift
 if [ $# = 0 ]; then
