@@ -4,6 +4,13 @@
     hostname "{{inventory_hostname}}"
     echo "{{inventory_hostname}}" > /etc/hostname
   when: ansible_hostname != inventory_hostname
+- name: improve log timestamps
+  lineinfile:
+    path: /etc/rsyslog.conf
+    regexp: '^\$ActionFileDefaultTemplate '
+    line: '$ActionFileDefaultTemplate RSYSLOG_FileFormat'
+  notify:
+    - restart syslog
 - name: Find RPMs
   find:
     paths: "/rpms"
