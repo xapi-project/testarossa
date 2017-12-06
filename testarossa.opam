@@ -1,0 +1,27 @@
+opam-version: "1.2"
+authors: "xen-api@lists.xen.org"
+maintainer: "xen-api@lists.xen.org"
+homepage: "https://github.com/xapi-project/testarossa"
+bug-reports: "https://github.com/xapi-project/testarossa/issues"
+dev-repo: "https://github.com/xapi-project/testarossa.git"
+build: [[ "jbuilder" "build" "-p" name "-j" jobs ]]
+depends: [
+    "jbuilder" {build}
+    "alcotest-lwt"
+    "astring"
+    "cmdliner"
+    "ezjsonm"
+    "ezxmlm"
+    "fmt"
+    "fmt.tty"
+    "ipaddr"
+    "logs"
+    "logs.cli"
+    "logs.fmt"
+    "ppx_deriving_rpc"
+    "rpclib"
+    "rpclib.json"
+    "rresult"
+    "xen-api-client-lwt"
+]
+tags: [ "org:xapi-project" ]

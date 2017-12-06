@@ -25,3 +25,6 @@
 # provisioning after a reboot
 - name: Sync
   command: sync
+
+- name: Sync2
+  command: sync

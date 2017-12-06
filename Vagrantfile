@@ -4,31 +4,32 @@
 # Vagrantfile API/syntax version. Don't touch unless you know what you're doing!
 VAGRANTFILE_API_VERSION = "2"
 
-LOCAL_BRANCH = ENV.fetch("LOCAL_BRANCH", "feature-clustering")
+LOCAL_BRANCH = ENV.fetch("LOCAL_BRANCH", "feature-REQ477-master")
 
 USER = ENV.fetch("USER")
-folders = {'xs/rpms' => '/rpms',
+folders = {
+#    'xs/rpms' => '/rpms',
 #           'xs/opt' => '/opt',
            'xs/sbin' => '/sbin',
            'xs/bin' => '/bin',
 #           'xs/boot' => '/boot',
 #	   'xs/usr/sbin' => '/usr/sbin',
-#           'scripts' => '/scripts'
+           'scripts' => '/scripts'
            }
 
 Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
 # Disable default synced folder
   config.vm.synced_folder ".", "/vagrant", disabled: true
 
-#  config.vm.define "infrastructure" do |infra|
-#    infra.vm.box = "jonludlam/xs-centos-7"
-#    infra.vm.provision "shell", path: "scripts/infra/vagrant_provision.sh"
-#    infra.vm.synced_folder "scripts/infra", "/scripts", type: "rsync", rsync__args: ["--verbose", "--archive", "-z", "--copy-links"]
-#    infra.vm.network "public_network", bridge: "xenbr0"
-#    config.vm.provider "xenserver" do |xs|
-#        xs.name = "#{USER}/infrastructure/#{infra.vm.box}"
-#    end
-#  end
+  config.vm.define "infrastructure" do |infra|
+    infra.vm.box = "jonludlam/xs-centos-7"
+    infra.vm.provision "shell", path: "scripts/infra/vagrant_provision.sh"
+    infra.vm.synced_folder "scripts/infra", "/scripts", type: "rsync", rsync__args: ["--verbose", "--archive", "-z", "--copy-links"]
+    infra.vm.network "public_network", bridge: "xenbr0"
+    config.vm.provider "xenserver" do |xs|
+        xs.name = "#{USER}/infrastructure/#{infra.vm.box}"
+    end
+  end
 
 #  (1..3).each do |i|
 #    config.vm.define "ely#{i}" do |host|
@@ -81,7 +82,7 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
 #  end
 
 # Defines cluster{1,2,3} for corosync investigation
-  N = 8
+  N = 64
   NAMES = Hash[ (1..N).map{|i| [i, "cluster#{i}"]} ]
   (1..N).each do |i|
     hostname = NAMES[i]
@@ -102,6 +103,30 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
 #        ansible.verbose = "vvv"
        ansible.playbook = "playbook.yml"
       end
+    end
+  end
+
+  XN = 16
+  XNAMES = Hash[ (0..XN).map{|i| [i, "xcluster#{i}"]} ]
+  (1..XN).each do |i|
+    hostname = XNAMES[i]
+    config.vm.define hostname do |host|
+      host.vm.box = "jonludlam/#{LOCAL_BRANCH}"
+      host.vm.network "public_network", bridge: "xenbr0"
+      folders.each { |k,v| host.vm.synced_folder k, v, type: "rsync", rsync__args: ["--verbose", "--archive", "-z", "--copy-links"] }
+      host.vm.synced_folder "scripts", "/scripts", type:"rsync", rsync__args: ["--verbose", "--archive", "-z", "--copy-links"]
+      config.vm.provider "xenserver" do |xs|
+        xs.name = "#{USER}/#{hostname}/#{host.vm.box}"
+      end
+      host.vm.provision :ansible do |ansible|
+           ansible.groups = {
+                  "xcluster" => XNAMES[i]
+           }
+           ansible.limit = "xcluster"
+# ansible.verbose = "vvv"
+           ansible.playbook = "playbook.yml"
+      end
+      host.vm.provision "shell", path: "scripts/xs/update.sh"
     end
   end
 
