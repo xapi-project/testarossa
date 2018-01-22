@@ -2,6 +2,12 @@
 - name: Generate xapissl.pem
   command: /opt/xensource/libexec/generate_ssl_cert /etc/xensource/xapi-ssl.pem {{inventory_hostname}}
 
+- name: Add local-port to xapi-clusterd service file
+  lineinfile:
+    path: /usr/lib/systemd/system/xapi-clusterd.service
+    regexp: '^ExecStart=/usr/sbin/xapi-clusterd$'
+    line: 'ExecStart=/usr/sbin/xapi-clusterd --local_port 2375'
+
 # Note: if upgrading a live system would need to stop the cluster or at least disable fencing first
 - name: Run xapi-clusterd
   systemd: state=started enabled=yes name=xapi-clusterd
