@@ -8,6 +8,15 @@
     regexp: '^ExecStart=/usr/sbin/xapi-clusterd$'
     line: 'ExecStart=/usr/sbin/xapi-clusterd --local_port 2375'
 
+- name: Open port 2375 in the firewall
+  lineinfile:
+    path: /etc/sysconfig/iptables
+    insertafter: '-A RH-Firewall-1-INPUT -p tcp -m tcp --dport 8892 -j ACCEPT'
+    line: '-A RH-Firewall-1-INPUT -p tcp -m tcp --dport 2375 -j ACCEPT'
+
+- name: Restart iptables to pick up the new rule
+  systemd: state=restarted enabled=yes name=iptables
+
 # Note: if upgrading a live system would need to stop the cluster or at least disable fencing first
 - name: Run xapi-clusterd
   systemd: state=started enabled=yes name=xapi-clusterd
