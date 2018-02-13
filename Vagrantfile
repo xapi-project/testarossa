@@ -17,6 +17,7 @@ folders = {
            'scripts' => '/scripts'
            }
 
+Vagrant::DEFAULT_SERVER_URL.replace('https://vagrantcloud.com')
 Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
 # Disable default synced folder
   config.vm.synced_folder ".", "/vagrant", disabled: true
