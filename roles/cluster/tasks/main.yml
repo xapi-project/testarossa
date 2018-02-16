@@ -1,6 +1,8 @@
 ---
 - name: Generate xapissl.pem
   command: /opt/xensource/libexec/generate_ssl_cert /etc/xensource/xapi-ssl.pem {{inventory_hostname}}
+  args:
+    creates: /etc/xensource/xapi-ssl.pem
 
 - name: Add local-port to xapi-clusterd service file
   lineinfile:
@@ -24,4 +26,7 @@
 # We are going to fence in the tests, make sure we don't loose all the
 # provisioning after a reboot
 - name: Sync
+  command: sync
+
+- name: Sync2
   command: sync

@@ -2,6 +2,8 @@
 
 rm /etc/sysconfig/network-scripts/ifcfg-eth0
 
+systemctl enable xapi-clusterd.service
+systemctl start xapi-clusterd.service
 systemctl start forkexecd.service
 systemctl enable forkexecd.service 2>/dev/null
 systemctl start xcp-networkd.service
@@ -16,6 +18,8 @@ systemctl start xenopsd-xc.service
 systemctl enable xenopsd-xc.service 2>/dev/null
 systemctl start xapi.service
 systemctl enable xapi.service 2>/dev/null
+systemctl enable xapi-domains.service 2>/dev/null
+systemctl start xapi-domains.service
 
 sleep 5
 
@@ -38,4 +42,5 @@ sudo xe pif-plug uuid=$pif
 sudo chmod 777 /var/lib/xcp/xapi
 host=`sudo xe host-list --minimal`
 sudo xe host-param-set uuid=$host other-config:multipathing=true other-config:multipathhandle=dmp
-
+#sudo /opt/xensource/libexec/xen-cmdline --set-xen dom0_mem=3000M,max:3000M
+#sudo reboot

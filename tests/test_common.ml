@@ -27,18 +27,19 @@ type storage_server = {
 
 type state = {
   hosts : host list;
-  pool : bytes; (* reference *)
-  master : bytes; (* reference *)
+  pool : [`Pool] API.Ref.t; (* reference *)
+  master : [`Host] API.Ref.t; (* reference *)
   master_uuid : bytes; (* uuid *)
   master_rpc : (Rpc.call -> Rpc.response Lwt.t);
-  master_session : bytes;
+  master_session : [`Session] API.Ref.t;
   pool_setup : bool;
-  iscsi_sr : (bytes * bytes) option; (* reference * uuid *)
-  nfs_sr : (bytes * bytes) option; (* reference * uuid *)
-  mirage_vm : bytes option; (* reference *)
+  iscsi_sr : ([`SR] API.Ref.t * bytes) option; (* reference * uuid *)
+  nfs_sr : ([`SR] API.Ref.t * bytes) option; (* reference * uuid *)
+  gfs2_sr : ([`SR] API.Ref.t * bytes) option; (* reference * uuid *)
+  mirage_vm : [`VM] API.Ref.t option; (* reference *)
 }
 
-type sr_type = NFS | ISCSI
+type sr_type = NFS | ISCSI | GFS2
 
 let update_box name =
   ?| (Printf.sprintf "vagrant box update %s" name)
@@ -98,7 +99,7 @@ let mount_gfs2 ~host ~device =
 let get_hosts prefix m =
   let get_host n =
     match
-      ?|> "vagrant ssh %s%d -c \"/scripts/get_public_ip.sh\"" prefix n |> trim |> Stringext.split ~on:','
+      ?|> "vagrant ssh %s%d -c \"/scripts/xs/get_public_ip.sh\"" prefix n |> trim |> Stringext.split ~on:','
     with
     | [uuid; ip] -> {name=(Printf.sprintf "%s%d" prefix n); ip; uuid}
     | _ -> failwith "Failed to get host's uuid and IP"
@@ -106,7 +107,9 @@ let get_hosts prefix m =
   List.map get_host (Array.init m (fun i -> i+1) |> Array.to_list)
 
 let lwt_read file = Lwt_io.lines_of_file file |> Lwt_stream.to_list
-let get_ref name = lwt_read (Printf.sprintf ".vagrant/machines/%s/xenserver/id" name) >|= List.hd
+let get_ref name =
+  lwt_read (Printf.sprintf ".vagrant/machines/%s/xenserver/id" name)
+  >|= List.hd >|= API.Ref.of_string
 
 let get_vm_ref prefix i =
   get_ref (Printf.sprintf "%s%d" prefix i)
@@ -157,11 +160,11 @@ let revert_all conf m ~snapshot_name =
 
   let revert_host name =
     get_ref name >>= fun vm ->
-    echo "Getting list of snapshot for VM %s" vm;
+    echo "Getting list of snapshot for VM %s" (API.Ref.string_of vm);
     VM.get_snapshots ~rpc ~session_id ~self:vm >>= fun snapshots ->
     Lwt_list.filter_p is_ours snapshots >>= fun snapshots ->
     let snapshot = List.hd snapshots in
-    echo "Reverting VM %s to clean snapshot %s" vm snapshot;
+    echo "Reverting VM %s to clean snapshot %s" (API.Ref.string_of vm) (API.Ref.string_of snapshot);
     VM.revert ~rpc ~session_id ~snapshot
   in
   "infrastructure" ::
@@ -197,9 +200,10 @@ let setup_pool hosts =
       Lwt.return (rpc,sess)) hosts
   >>= fun rss ->
   let slaves = List.tl rss in
-  Lwt_list.iter_p (fun (rpc,session_id) ->
+  Lwt_list.iter_s (fun (rpc,session_id) ->
       Pool.join ~rpc ~session_id ~master_address:(List.hd hosts).ip
-        ~master_username:"root" ~master_password:"xenroot") slaves >>= fun () ->
+        ~master_username:"root" ~master_password:"xenroot" >>= fun () ->
+      Lwt_unix.sleep 30.) slaves >>= fun () ->
   Printf.printf "All slaves told to join: waiting for all to be enabled\n%!";
   let rpc,session_id = List.hd rss in
   let rec wait () =
@@ -230,6 +234,7 @@ let setup_pool hosts =
     pool_setup = true;
     iscsi_sr = None;
     nfs_sr = None;
+    gfs2_sr = None;
     mirage_vm = None;
   }
 
@@ -259,6 +264,7 @@ let get_pool hosts =
       pool_setup = true;
       iscsi_sr = None;
       nfs_sr = None;
+      gfs2_sr = None;
       mirage_vm = None;
     }
   end else begin
@@ -274,8 +280,8 @@ let create_iscsi_sr state =
   Lwt.catch
     (fun () -> 
        SR.probe ~rpc ~session_id ~host:state.master
-         ~device_config:["target", storage.storage_ip; "targetIQN", storage.iscsi_iqn]
-         ~_type:"lvmoiscsi" ~sm_config:[])
+                ~device_config:["target", storage.storage_ip; "targetIQN", storage.iscsi_iqn]
+                ~_type:"lvmoiscsi" ~sm_config:[])
     (fun e -> match e with
        | Api_errors.Server_error (_,[_;_;xml]) -> Lwt.return xml
        | e -> Printf.printf "Got another error: %s\n" (Printexc.to_string e);
@@ -283,11 +289,109 @@ let create_iscsi_sr state =
   >>= fun xml ->
   let open Ezxmlm in
   let (_,xmlm) = from_string xml in
-  let scsiid = xmlm |> member "iscsi-target" |> member "LUN" |> member "SCSIid" |> data_to_string in
+  let scsiid = xmlm |> member "iscsi-target" |> member "LUN" |> member "SCSIid"
+         |> data_to_string in
   Printf.printf "SR Probed: SCSIid=%s\n%!" scsiid;
   SR.create ~rpc ~session_id ~host:state.master
-    ~device_config:["target", storage.storage_ip; "targetIQN", storage.iscsi_iqn; "SCSIid", scsiid]
+    ~device_config:["provider", "iscsi"; "ips", storage.storage_ip; "iqns", storage.iscsi_iqn; "SCSIid", scsiid]
     ~_type:"lvmoiscsi" ~physical_size:0L ~name_label:"iscsi-sr"
+    ~name_description:"" ~content_type:""
+    ~sm_config:[] ~shared:true >>= fun ref ->
+  SR.get_uuid ~rpc ~session_id ~self:ref >>= fun uuid ->
+  return (ref, uuid)
+
+let device_config ?(provider="iscsi") ~ips ~iqns ?scsiid () =
+  let open Ezjsonm in
+  let conf = [ "provider", `String provider;
+    "ips", `String ips;
+    "iqns", `String iqns;
+  ] in
+  (match scsiid with
+  | Some id -> ("ScsiId", `String id) :: conf
+  | None -> conf) |> dict |> to_string ~minify:true |> fun x -> ["uri", x]
+
+let get_management_pifs ~rpc ~session_id =
+  echo "Getting all PIFs\n%!";
+  (* get_all_records raises Not_found, probably due to version mismatch between
+   * xen-api-client and xapi having different fields... *)
+  PIF.get_all ~rpc ~session_id
+  >>= Lwt_list.filter_p (fun self -> PIF.get_management ~rpc ~session_id ~self)
+
+let create_gfs2_sr state =
+  Printf.printf "Creating GFS2 SR\n%!";
+  let rpc = state.master_rpc in
+  let storage = setup_infra () in
+  Printf.printf "got storage\n%!";
+  let session_id = state.master_session in
+
+  (* probe as if it was an iSCSI SR, since we don't have probe for GFS2 yet *)
+  Lwt.catch
+    (fun () -> 
+       SR.probe ~rpc ~session_id ~host:state.master
+                ~device_config:["target", storage.storage_ip; "targetIQN", storage.iscsi_iqn]
+                ~_type:"lvmoiscsi" ~sm_config:[])
+    (fun e -> match e with
+       | Api_errors.Server_error (_,[_;_;xml]) -> Lwt.return xml
+       | e -> Printf.printf "Got another error: %s\n" (Printexc.to_string e);
+         Lwt.return "<bad>")
+  >>= fun xml ->
+  let open Ezxmlm in
+  echo "got: %s" xml;
+  let (_,xmlm) = from_string xml in
+  let scsiid = xmlm |> member "iscsi-target" |> member "LUN" |> member "SCSIid"
+         |> data_to_string in
+  Printf.printf "SR Probed: SCSIid=%s\n%!" scsiid;
+  (*  let scsiid = "3600140519bb4ca7f29c43b59bc09acb3" in*)
+(*  let scsiid = "36001405e177b3f19b5946e88d96d6d86" in *)
+
+
+(*  Lwt.catch
+    (fun () ->
+       SR.probe ~rpc ~session_id ~host:state.master
+         ~device_config:(device_config ~ips:storage.storage_ip ~iqns:storage.iscsi_iqn ())
+         ~_type:"gfs2" ~sm_config:[])
+    (fun e -> match e with
+       | Api_errors.Server_error (_,[_;_;xml]) -> Lwt.return xml
+       | e -> Printf.printf "Got another error: %s\n" (Printexc.to_string e);
+         Lwt.return "<bad>")
+  >>= fun xml ->
+  let open Ezxmlm in
+  Printf.printf "Got: %s\n%!" xml;
+  let (_,xmlm) = from_string xml in
+  let scsiid = xmlm |> member "iscsi-target" |> member "LUN" |> member "SCSIid"
+       |> data_to_string in
+  Printf.printf "SR Probed: SCSIid=%s\n%!" scsiid;*)
+  Pool.get_uuid ~rpc ~session_id ~self:state.pool >>= fun pool_uuid ->
+
+  get_management_pifs ~rpc ~session_id >>= function
+  | [] -> Lwt.fail_with "No management interface found"
+  | (pif :: _) as pifs ->
+
+  echo "Setting disallow-unplug";
+  Lwt_list.iter_p (fun self ->
+    PIF.set_disallow_unplug ~rpc ~session_id ~self ~value:true) pifs
+  >>= fun () ->
+
+  PIF.get_network ~rpc ~session_id ~self:pif >>= fun network ->
+  Network.get_uuid ~rpc ~session_id ~self:network >>= fun network_uuid ->
+  let master = List.find (fun host -> host.uuid = state.master_uuid) state.hosts
+  in
+
+  echo "Creating cluster";
+
+  let cluster =
+(*    match (?|>) "xe cluster-list -s %s -u %s -pw %s --minimal" master.ip !username !password with
+    | "" ->*)
+
+        ?|> "xe cluster-pool-create -s %s -u %s -pw %s pool-uuid=%s network-uuid=%s"
+      master.ip !username !password pool_uuid network_uuid
+
+(*    | c -> c *)
+  in
+  echo "Creating SR";
+  SR.create ~rpc ~session_id ~host:state.master
+    ~device_config:(device_config ~ips:storage.storage_ip ~iqns:storage.iscsi_iqn ~scsiid ())
+    ~_type:"gfs2" ~physical_size:0L ~name_label:"gfs2-sr"
     ~name_description:"" ~content_type:""
     ~sm_config:[] ~shared:true >>= fun ref ->
   SR.get_uuid ~rpc ~session_id ~self:ref >>= fun uuid ->
@@ -302,7 +406,7 @@ let create_nfs_sr state =
   let session_id = state.master_session in
   SR.create ~rpc ~session_id ~host:state.master
     ~device_config:["server", storage.storage_ip; "serverpath", "/nfs"]
-    ~_type:"nfs" ~physical_size:0L ~name_label:"nfs-sr"
+    ~_type:"nfs-ng" ~physical_size:0L ~name_label:"nfs-sr"
     ~name_description:"" ~content_type:""
     ~sm_config:[] ~shared:true >>= fun ref ->
   SR.get_uuid ~rpc ~session_id ~self:ref >>= fun uuid ->
@@ -313,27 +417,33 @@ let find_or_create_sr state ty =
   let rpc,session_id = state.master_rpc,state.master_session in
   let srty_of_ty = function
     | ISCSI -> "lvmoiscsi"
-    | NFS -> "nfs"
+    | NFS -> "nfs-ng"
+    | GFS2 -> "gfs2"
   in
+(*  Printf.printf "get_all_records0\n%!";
   SR.get_all_records ~rpc ~session_id >>= fun sr_ref_recs ->
+  Printf.printf "get_all_records1\n%!";
   let pred = fun (sr_ref, sr_rec) -> sr_rec.API.sR_type = (srty_of_ty ty) in
   if List.exists pred sr_ref_recs
   then begin
+    Printf.printf "found\n%!";
     let (rf, rc) = List.find pred sr_ref_recs in
     Lwt.return (rf, rc.API.sR_uuid)
-  end else begin
+  end else*) begin
     match ty with
     | ISCSI -> create_iscsi_sr state
     | NFS -> create_nfs_sr state
+    | GFS2 -> create_gfs2_sr state
   end
 
 
 let get_sr state ty =
   match (ty, state.iscsi_sr, state.nfs_sr) with
-  | ISCSI, Some _, _  
-  | NFS, _, Some _ -> Lwt.return state
+  | _, Some _, _ -> Lwt.return state
   | ISCSI, _, _ -> find_or_create_sr state ty >>= fun s -> Lwt.return { state with iscsi_sr = Some s }
   | NFS, _, _ -> find_or_create_sr state ty >>= fun s -> Lwt.return { state with nfs_sr = Some s }
+  | GFS2, _, _ -> find_or_create_sr state ty  >>= fun s -> Lwt.return { state with gfs2_sr = Some s }
+
 
 
 let find_template rpc session_id name =
@@ -360,7 +470,7 @@ let create_mirage_vm state =
   in
   VM.clone rpc session_id template "mirage" >>= fun vm ->
   VM.provision rpc session_id vm >>= fun _ ->
-  VM.set_PV_kernel rpc session_id vm "/boot/guest/mir-suspend.xen.gz" >>= fun () ->
+  VM.set_PV_kernel rpc session_id vm "/boot/guest/test-vm.xen.gz" >>= fun () ->
   VM.set_HVM_boot_policy rpc session_id vm "" >>= fun () ->
   VM.set_memory_limits ~rpc ~session_id ~self:vm ~static_min:meg32 ~static_max:meg32 ~dynamic_min:meg32 ~dynamic_max:meg32 >>= fun () ->
   Lwt.return ({state with mirage_vm = Some vm}, vm)
@@ -376,7 +486,6 @@ let find_or_create_mirage_vm state =
   | [] ->
     create_mirage_vm state
 
-
 let get_control_domain state host =
   let rpc = state.master_rpc in
   let session_id = state.master_session in
@@ -389,10 +498,10 @@ let get_control_domain state host =
        vm_rec.API.vM_resident_on=host && vm_rec.API.vM_is_control_domain)
     vms |> fst |> Lwt.return
 
-
 let run_and_self_destruct (t : 'a Lwt.t) : 'a =
   let t' =
     Lwt.finalize (fun () -> t) (fun () ->
+      Printexc.print_backtrace stderr;
       let name = Sys.argv.(0) in
       let ocamlscript_exe =
         if Filename.check_suffix name "exe" then name else name ^ ".exe" in

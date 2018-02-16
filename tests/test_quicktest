@@ -1,6 +1,7 @@
 #!/usr/bin/env ocamlscript
-Ocaml.packs := ["lwt"; "xen-api-client.lwt"; "re"; "ezxmlm"];
-Ocaml.sources := ["../scripts/yorick.ml"; "test_common.ml"]
+Ocaml.packs := ["lwt"; "lwt.preemptive"; "xen-api-client-lwt"; "re"; "ezxmlm"; "ezjsonm"];
+Ocaml.sources := ["../scripts/yorick.ml"; "test_common.ml"];
+Ocaml.ocamlflags := ["-thread"]
 --
 open Yorick
 open Lwt
@@ -8,27 +9,32 @@ open Xen_api
 open Xen_api_lwt_unix
 open Test_common
 
-let quicktest_cmd = "vagrant ssh host1 -c 'sudo /opt/xensource/debug/quicktest'"
+let prefix = "xcluster"
+let n = 8
+
+let quicktest_cmd = "vagrant ssh " ^ prefix ^ "1 -c 'sudo /opt/xensource/debug/quicktest -only-sr gfs2'"
 
 let _ =
   let th =
-    echo "Udpating vagrant box to latest version";
-    update_box "host1";
-    echo "Starting up host";
-    start_all "host" 1;
+    (*    echo "Updating vagrant box to latest version";
+    update_box (prefix ^ "1");*)
+(*    echo "Starting up host";
+    start_all prefix n;*)
     echo "Setting up infrastructure VM for iSCSI export";
     let _ = setup_infra () in
-    let hosts = get_hosts "host" 1 in
+    setup_pool (get_hosts prefix 1) >>= fun state ->
+    echo "Creating shared GFS2 SR";
+    get_sr state GFS2
+    >>= fun state ->
+    begin match state.gfs2_sr with
+    | Some (_, uuid) -> echo "GFS2 SR uuid: %s%!" uuid
+    | None -> echo "No GFS2 SR!"
+    end;
+    find_or_create_mirage_vm state >>= fun (state,vm) ->
+    echo "Building pool";
+    let hosts = get_hosts prefix n in
     get_pool hosts
     >>= fun state ->
-    find_or_create_mirage_vm state >>= fun (state,vm) ->
-    echo "Creating shared NFS SR";
-    get_sr state NFS
-    >>= fun state ->
-    begin match state.nfs_sr with
-    | Some (_, uuid) -> echo "NFS SR uuid: %s%!" uuid
-    | None -> echo "No NFS SR!"
-    end;
     echo "Running quicktest...";
     match !?* (?|>) "%s" quicktest_cmd with
     | (_, 0) ->

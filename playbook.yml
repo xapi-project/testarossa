@@ -8,6 +8,15 @@
   - common
   - cluster
 
+- hosts: xcluster
+  become: true
+  become_method: sudo
+  become_user: root
+  roles:
+  - { role: xenserver, device="eth1" }
+  - common
+  - cluster
+
 - hosts: honolulu
   become: true
   become_method: sudo

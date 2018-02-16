@@ -1,0 +1,38 @@
+(* -*- tuareg -*- *)
+#require "unix"
+
+let flags = function
+  | [] -> ""
+  | pkgs ->
+    let cmd = "ocamlfind ocamlc -verbose" ^ (
+        List.fold_left (fun acc pkg -> acc ^ " -package " ^ pkg) "" pkgs
+      ) in
+    let ic = Unix.open_process_in
+        (cmd ^ " | grep -oEe '-ppx (\"([^\"\\]|\\.)+\"|\\w+)'")
+    in
+    let rec go ic acc =
+      try go ic (acc ^ " " ^ input_line ic) with End_of_file -> close_in ic; acc
+    in
+    go ic ""
+
+let rewriters = ["ppx_deriving_rpc"]
+let flags = flags rewriters
+
+let () = Printf.ksprintf Jbuild_plugin.V1.send {|
+(jbuild_version 1)
+(library
+ ((name testarossa)
+  (flags (:standard -safe-string %s))
+  (public_name testarossa)
+  (preprocess (pps (ppx_deriving_rpc)))
+  (libraries (alcotest-lwt
+              astring
+              ezjsonm
+              ezxmlm
+              fmt
+              mtime.clock.os
+              ipaddr
+              logs
+              xen-api-client-lwt))))
+|} flags
+
