@@ -13,7 +13,7 @@
 - name: Open port 8895 in the firewall
   lineinfile:
     path: /etc/sysconfig/iptables
-    insertafter: '-A RH-Firewall-1-INPUT -p tcp -m tcp --dport 8892 -j ACCEPT'
+    insertafter: '-A RH-Firewall-1-INPUT -p tcp -m tcp --dport 8896 -j ACCEPT'
     line: '-A RH-Firewall-1-INPUT -p tcp -m tcp --dport 8895 -j ACCEPT'
 
 - name: Restart iptables to pick up the new rule
