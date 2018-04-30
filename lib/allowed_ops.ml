@@ -106,6 +106,8 @@ module Cluster_host_test = struct
     | `disable ->
         (* TODO: when SR attached that requires cluster stack this should not be present *)
         rpc ctx @@ Cluster_host.disable ~self
+    | `destroy -> Lwt.return_unit
+        (* rpc_ctx @@ Cluster_host.destroy ~self *)
 end
 
 let todo msg =
