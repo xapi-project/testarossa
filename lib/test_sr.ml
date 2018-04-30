@@ -48,14 +48,12 @@ let enable_clustering t =
 let device_config ?(provider= "iscsi") ~ip ~iqn ?scsiid () =
   let open Ezjsonm in
   let conf =
-    [ ("provider", `String provider)
-    ; ("ips", `String (Ipaddr.V4.to_string ip))
-    ; ("iqns", `String iqn)
-    ; ("journal_size", `String "8") ]
+    [ ("provider", provider)
+    ; ("ips", (Ipaddr.V4.to_string ip))
+    ; ("iqns", iqn)
+    ; ("journal_size", "8") ]
   in
-  (match scsiid with Some id -> ("ScsiId", `String id) :: conf | None -> conf) |> dict
-  |> to_string ~minify:true |> fun x -> [("uri", x)]
-
+  (match scsiid with Some id -> ("ScsiId", id) :: conf | None -> conf)
 
 let probe ctx ~iscsi ~iqn host =
   (* probe as if it was an iSCSI SR, since we don't have probe for GFS2 yet *)
