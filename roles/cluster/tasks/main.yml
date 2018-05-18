@@ -7,17 +7,14 @@
 - name: Add local-port to xapi-clusterd service file
   lineinfile:
     path: /usr/lib/systemd/system/xapi-clusterd.service
-    regexp: '^ExecStart=/usr/sbin/xapi-clusterd$'
+    regexp: '^ExecStart=/usr/sbin/xapi-clusterd'
     line: 'ExecStart=/usr/sbin/xapi-clusterd --local_port 8895'
 
-- name: Open port 8895 in the firewall
-  lineinfile:
-    path: /etc/sysconfig/iptables
-    insertafter: '-A RH-Firewall-1-INPUT -p tcp -m tcp --dport 8896 -j ACCEPT'
-    line: '-A RH-Firewall-1-INPUT -p tcp -m tcp --dport 8895 -j ACCEPT'
-
-- name: Restart iptables to pick up the new rule
-  systemd: state=restarted enabled=yes name=iptables
+- name: Open port 8895 and 8896 in the firewall
+  command: "/etc/xapi.d/plugins/firewall-port open {{ item }}"
+  with_items:
+      - 8895
+      - 8896
 
 # Note: if upgrading a live system would need to stop the cluster or at least disable fencing first
 - name: Run xapi-clusterd
@@ -26,7 +23,4 @@
 # We are going to fence in the tests, make sure we don't loose all the
 # provisioning after a reboot
 - name: Sync
-  command: sync
-
-- name: Sync2
   command: sync
