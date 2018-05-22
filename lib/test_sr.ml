@@ -49,11 +49,11 @@ let device_config ?(provider= "iscsi") ~ip ~iqn ?scsiid () =
   let open Ezjsonm in
   let conf =
     [ ("provider", provider)
-    ; ("ips", (Ipaddr.V4.to_string ip))
-    ; ("iqns", iqn)
+    ; ("target", (Ipaddr.V4.to_string ip))
+    ; ("targetIQN", iqn)
     ; ("journal_size", "8") ]
   in
-  (match scsiid with Some id -> ("ScsiId", id) :: conf | None -> conf)
+  (match scsiid with Some id -> ("SCSIid", id) :: conf | None -> conf)
 
 let probe ctx ~iscsi ~iqn host =
   (* probe as if it was an iSCSI SR, since we don't have probe for GFS2 yet *)
@@ -294,6 +294,7 @@ let fix_management_interfaces ctx =
 
 
 let make_pool ~uname ~pwd ips =
+  debug (fun m -> m "Getting masters before pool join");
   Lwt_list.map_p (get_master ~uname ~pwd) ips
   >>= fun masters ->
   match choose_master masters with
