@@ -41,9 +41,8 @@ let enable_clustering t =
               >>= fun network ->
               debug (fun m -> m "Creating cluster on pool") ;
               rpc ctx
-              @@ Cluster.pool_create ~network ~cluster_stack:"corosync" ~token_timeout:20.0
-                   ~token_timeout_coefficient:1.0
-
+              @@ Cluster.pool_create ~network ~cluster_stack:"corosync" ~token_timeout:1.0
+                   ~token_timeout_coefficient:0.65
 
 let device_config ?(provider= "iscsi") ~ip ~iqn ?scsiid () =
   let open Ezjsonm in

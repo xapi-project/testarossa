@@ -41,6 +41,27 @@ module Make (B : BEHAVIOUR) : S = struct
 
   let pp_operation = Fmt.using B.rpc_of_operation PP.rpc_t
 
+  let pp_crashdump ppf (hostname, crashdump) =
+    Fmt.pf ppf "Host: %s, Date: %a, Size: %Ld" hostname
+      Fmt.(using Xapi_stdext_date.Date.to_string string)
+      crashdump.API.host_crashdump_timestamp
+      crashdump.API.host_crashdump_size
+
+  let check_crashdumps ctx () =
+    rpc ctx Host_crashdump.get_all_records >>= function
+    | [] ->
+      debug (fun m -> m "No crashdumps, good");
+      Lwt.return_unit
+    | crashdumps ->
+      debug (fun m -> m "Found %d crashdumps" (List.length crashdumps));
+      crashdumps
+      |> Lwt_list.map_p (fun (_, crashdump) ->
+          rpc ctx @@ Host.get_name_label ~self:crashdump.API.host_crashdump_host >>= fun host ->
+          Lwt.return (host, crashdump))
+      >>= fun crashdumps ->
+      err (fun m -> m "Found crashdumps: %a" (Fmt.Dump.list pp_crashdump) crashdumps);
+      Lwt.return_unit
+
   let execute t =
     step t B.name
     @@ fun ctx ->
@@ -53,10 +74,10 @@ module Make (B : BEHAVIOUR) : S = struct
           on_self ctx self B.get_allowed_operations
           >>= fun ops ->
           debug (fun m -> m "Available operations on %s: %a" uuid Fmt.(list pp_operation) ops) ;
-          match List.find_all (fun e -> not (Hashtbl.mem seen e)) ops with
-          | [] -> Lwt.return_unit
+          match List.find_all (fun e -> not (Hashtbl.mem seen (uuid, e))) ops with
+           [] -> Lwt.return_unit
           | op :: _ ->
-              Hashtbl.add seen op () ;
+              Hashtbl.add seen (uuid, op) () ;
               debug (fun m -> m "Performing %a on %s" pp_operation op uuid) ;
               Lwt.catch
                 (fun () -> B.perform ctx self op)
@@ -81,13 +102,16 @@ module Make (B : BEHAVIOUR) : S = struct
     in
     rpc ctx B.get_all
     >>= fun all ->
-    debug (fun m -> m "Performing operations serially") ;
+    debug (fun m -> m "Performing operations serially on %d objects" (List.length all)) ;
     Lwt_list.iter_s perform_allowed all
     >>= fun () ->
+    check_crashdumps ctx () >>= fun () ->
     rpc ctx B.get_all
     >>= fun all ->
     debug (fun m -> m "Performing operations in parallel") ;
-    Lwt_list.iter_p perform_allowed all
+    Lwt.finalize (fun () ->
+     Lwt_list.iter_p perform_allowed all)
+      (check_crashdumps ctx)
 end
 
 module Cluster_host_test = struct
@@ -369,13 +393,26 @@ module Host_test = struct
     >>= function true -> Lwt.return_unit | false -> Lwt_unix.sleep 0.3 >>= wait_live ctx ~host
 
 
+  let skip_if_master ctx host f =
+      Context.get_pool_master ctx >>= fun (_, master) ->
+      if master = host then begin
+        debug (fun m -> m "Skipping host lifecycle operation on master");
+        Lwt.return_unit
+      end else f host
+
   let perform ctx host = function
     | `evacuate -> rpc ctx @@ Host.evacuate ~host
     | `power_on -> rpc ctx @@ Host.power_on ~host
     | `provision -> todo "??"
-    | `reboot -> rpc ctx @@ Host.reboot ~host >>= wait_live ctx ~host
-    | `shutdown -> rpc ctx @@ Host.shutdown ~host >>= wait_live ctx ~host
-    | `disable -> rpc ctx @@ Host.disable ~host
+    | `reboot ->
+      skip_if_master ctx host @@ fun host ->
+      rpc ctx @@ Host.reboot ~host >>= wait_live ctx ~host
+    | `shutdown ->
+      skip_if_master ctx host @@ fun host ->
+      rpc ctx @@ Host.shutdown ~host >>= wait_live ctx ~host
+    | `disable ->
+      skip_if_master ctx host @@ fun host ->
+      rpc ctx @@ Host.disable ~host
     | `vm_migrate -> vm ()
     | `vm_resume -> vm ()
     | `vm_start -> vm ()

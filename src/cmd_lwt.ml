@@ -17,11 +17,23 @@ let sync t =
   Xen_api_lwt_unix.(Context.(step t "Sync pool database" (fun ctx -> rpc ctx Pool.sync_database)))
 
 
-let prepare conf ~rollback =
+let do_clear_crashdumps t =
+  let open Xen_api_lwt_unix in
+  let open Context in
+  step t "Clearing crashdumps" @@ fun ctx ->
+  rpc ctx @@ Host_crashdump.get_all >>=
+  Lwt_list.iter_p (fun self  ->
+  rpc ctx @@ Host_crashdump.destroy ~self)
+
+
+let prepare conf ~rollback ~clear_crashdumps =
   handle_rollback conf ~rollback
   >>= fun () -> Test_sr.make_pool ~uname:conf.uname ~pwd:conf.pwd conf.hosts
   >>= fun t -> Test_sr.optimize_vms t
   >>= fun () -> sync t
+  >>= fun () ->
+  (if clear_crashdumps then do_clear_crashdumps t
+  else Lwt.return_unit)
   >>= fun () ->
   License.maybe_apply_license_pool t conf [Features.HA; Features.Corosync]
   >>= fun () ->
@@ -53,18 +65,22 @@ let rollback =
   let doc = "Rollback pool" in
   Arg.(value & flag & info ["rollback"] ~doc)
 
+let clear_crashdumps =
+  let doc = "Clear crashdumps" in
+  Arg.(value & flag & info ["clear-crashdumps"] ~doc)
+
 
 let prepare ~common ~sdocs ~exits =
   let doc = "Prepare test environment (setup pool, snapshot pool)" in
-  let main () config rollback = lwt_main config (prepare ~rollback) in
-  ( Term.(const main $ common $ config $ rollback)
+  let main () config rollback clear_crashdumps =
+    lwt_main config (prepare ~rollback ~clear_crashdumps) in
+  ( Term.(const main $ common $ config $ rollback $ clear_crashdumps)
   , Term.info "prepare" ~doc ~sdocs ~exits )
 
 
 let tests =
   let doc = "List of tests to run (default: all)" in
   Arg.(value & pos_all string [] & info [] ~docv:"TEST" ~doc)
-
 
 let run_tests conf tests =
   let available =
