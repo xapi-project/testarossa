@@ -125,8 +125,9 @@ let with_login ?(timeout= 60.0) ~uname ~pwd master f =
   let mrpc = make ~timeout ("https://" ^ master) |> wrap_rpc master in
   let login () =
     debug (fun m -> m "Logging in to %s as %s" master uname) ;
-    Session.login_with_password ~rpc:mrpc ~uname ~pwd ~version ~originator
-    >>= fun session_id -> Lwt.return (mrpc, session_id)
+    Lwt_unix.with_timeout 120. (fun () ->
+        Session.login_with_password ~rpc:mrpc ~uname ~pwd ~version ~originator
+        >>= fun session_id -> Lwt.return (mrpc, session_id))
   in
   let result = Singleton.create login in
   Singleton.get result
