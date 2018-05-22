@@ -6,7 +6,7 @@ type 'a api = rpc:rpc -> session_id:API.ref_session -> 'a
 module type S = sig
   val name : string
 
-  val execute : Context.t -> unit Lwt.t
+  val execute : ?skip_serial:bool -> Context.t -> unit Lwt.t
 end
 
 module type BEHAVIOUR = sig
@@ -62,7 +62,7 @@ module Make (B : BEHAVIOUR) : S = struct
       err (fun m -> m "Found crashdumps: %a" (Fmt.Dump.list pp_crashdump) crashdumps);
       Lwt.return_unit
 
-  let execute t =
+  let execute ?(skip_serial=false) t =
     step t B.name
     @@ fun ctx ->
     let seen = Hashtbl.create 17 in
@@ -100,12 +100,15 @@ module Make (B : BEHAVIOUR) : S = struct
                 Lwt.return_unit
             | e -> Lwt.fail e)
     in
+    (if skip_serial then Lwt.return_unit
+    else
     rpc ctx B.get_all
     >>= fun all ->
     debug (fun m -> m "Performing operations serially on %d objects" (List.length all)) ;
     Lwt_list.iter_s perform_allowed all
     >>= fun () ->
-    check_crashdumps ctx () >>= fun () ->
+    check_crashdumps ctx ())
+    >>= fun () ->
     rpc ctx B.get_all
     >>= fun all ->
     debug (fun m -> m "Performing operations in parallel") ;
