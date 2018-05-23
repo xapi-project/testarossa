@@ -83,11 +83,11 @@ let wrap_rpc dest f call =
 let get_pool_master t =
   rpc t Pool.get_all
   >>= function
-    | [pool_ref] ->
-        rpc t @@ Pool.get_master ~self:pool_ref
-        >>= fun master_ref -> Lwt.return (pool_ref, master_ref)
-    | [] -> Lwt.fail_with "No pools found"
-    | _ :: _ :: _ -> Lwt.fail_with "Too many pools"
+  | [pool_ref] ->
+    rpc t @@ Pool.get_master ~self:pool_ref
+    >>= fun master_ref -> Lwt.return (pool_ref, master_ref)
+  | [] -> Lwt.fail_with "No pools found"
+  | _ :: _ :: _ -> Lwt.fail_with "Too many pools"
 
 
 let max_expiration_retry = 3
@@ -98,24 +98,24 @@ let step t description f =
   let rec retry = function
     | n when n > max_expiration_retry -> Lwt.fail_with "Maximum number of retries exceeded"
     | n ->
-        Singleton.get t
-        >>= fun info ->
-        Lwt.catch
-          (fun () ->
-            debug (fun m -> m "Entering %s" description) ;
-            let c = Mtime_clock.counter () in
-            Lwt.finalize
-              (fun () -> f info)
-              (fun () ->
+      Singleton.get t
+      >>= fun info ->
+      Lwt.catch
+        (fun () ->
+           debug (fun m -> m "Entering %s" description) ;
+           let c = Mtime_clock.counter () in
+           Lwt.finalize
+             (fun () -> f info)
+             (fun () ->
                 let dt = Mtime_clock.count c in
                 debug (fun m -> m "Finished %s in %a" description Mtime.Span.pp dt) ;
                 Lwt.return_unit ) )
-          (function
-              | Api_errors.Server_error (code, _) when code = Api_errors.session_invalid ->
-                  debug (fun m -> m "Session is not valid (try #%d)!" n) ;
-                  Singleton.invalidate t info ;
-                  retry (n + 1)
-              | e -> Lwt.fail e)
+        (function
+          | Api_errors.Server_error (code, _) when code = Api_errors.session_invalid ->
+            debug (fun m -> m "Session is not valid (try #%d)!" n) ;
+            Singleton.invalidate t info ;
+            retry (n + 1)
+          | e -> Lwt.fail e)
   in
   retry 0
 

@@ -16,7 +16,7 @@ type t =
   ; uname: string
   ; pwd: string
   ; hosts: ipaddr list }
-  [@@deriving rpc]
+[@@deriving rpc]
 
 open Cmdliner
 

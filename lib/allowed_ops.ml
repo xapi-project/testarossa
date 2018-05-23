@@ -69,51 +69,51 @@ module Make (B : BEHAVIOUR) : S = struct
     let rec perform_allowed self =
       Lwt.catch
         (fun () ->
-          on_self ctx self B.get_uuid
-          >>= fun uuid ->
-          on_self ctx self B.get_allowed_operations
-          >>= fun ops ->
-          debug (fun m -> m "Available operations on %s: %a" uuid Fmt.(list pp_operation) ops) ;
-          match List.find_all (fun e -> not (Hashtbl.mem seen (uuid, e))) ops with
-           [] -> Lwt.return_unit
-          | op :: _ ->
-              Hashtbl.add seen (uuid, op) () ;
-              debug (fun m -> m "Performing %a on %s" pp_operation op uuid) ;
-              Lwt.catch
-                (fun () -> B.perform ctx self op)
-                (function
-                    | Api_errors.Server_error (code, (msg :: _ as lst))
-                      when code = Api_errors.sr_backend_failure && msg = "NotImplementedError" ->
-                        warn (fun m ->
-                            m "Operation %a is not implemented: %a!" pp_operation op
-                              Fmt.(list string)
-                              lst ) ;
-                        Lwt.return_unit
-                    | e ->
-                        err (fun m -> m "Operation %a failed: %a" pp_operation op Fmt.exn e) ;
-                        Lwt.return_unit
-                        (* and keep going *))
-              >>= fun () -> perform_allowed self )
+           on_self ctx self B.get_uuid
+           >>= fun uuid ->
+           on_self ctx self B.get_allowed_operations
+           >>= fun ops ->
+           debug (fun m -> m "Available operations on %s: %a" uuid Fmt.(list pp_operation) ops) ;
+           match List.find_all (fun e -> not (Hashtbl.mem seen (uuid, e))) ops with
+             [] -> Lwt.return_unit
+           | op :: _ ->
+             Hashtbl.add seen (uuid, op) () ;
+             debug (fun m -> m "Performing %a on %s" pp_operation op uuid) ;
+             Lwt.catch
+               (fun () -> B.perform ctx self op)
+               (function
+                 | Api_errors.Server_error (code, (msg :: _ as lst))
+                   when code = Api_errors.sr_backend_failure && msg = "NotImplementedError" ->
+                   warn (fun m ->
+                       m "Operation %a is not implemented: %a!" pp_operation op
+                         Fmt.(list string)
+                         lst ) ;
+                   Lwt.return_unit
+                 | e ->
+                   err (fun m -> m "Operation %a failed: %a" pp_operation op Fmt.exn e) ;
+                   Lwt.return_unit
+                   (* and keep going *))
+             >>= fun () -> perform_allowed self )
         (function
-            | Api_errors.Server_error (code, _) when code = Api_errors.handle_invalid ->
-                (* fine, we've run destroy/forget *)
-                Lwt.return_unit
-            | e -> Lwt.fail e)
+          | Api_errors.Server_error (code, _) when code = Api_errors.handle_invalid ->
+            (* fine, we've run destroy/forget *)
+            Lwt.return_unit
+          | e -> Lwt.fail e)
     in
     (if skip_serial then Lwt.return_unit
-    else
-    rpc ctx B.get_all
-    >>= fun all ->
-    debug (fun m -> m "Performing operations serially on %d objects" (List.length all)) ;
-    Lwt_list.iter_s perform_allowed all
-    >>= fun () ->
-    check_crashdumps ctx ())
+     else
+       rpc ctx B.get_all
+       >>= fun all ->
+       debug (fun m -> m "Performing operations serially on %d objects" (List.length all)) ;
+       Lwt_list.iter_s perform_allowed all
+       >>= fun () ->
+       check_crashdumps ctx ())
     >>= fun () ->
     rpc ctx B.get_all
     >>= fun all ->
     debug (fun m -> m "Performing operations in parallel") ;
     Lwt.finalize (fun () ->
-     Lwt_list.iter_p perform_allowed all)
+        Lwt_list.iter_p perform_allowed all)
       (check_crashdumps ctx)
 end
 
@@ -131,10 +131,10 @@ module Cluster_host_test = struct
   let perform ctx self = function
     | `enable -> rpc ctx @@ Cluster_host.enable ~self
     | `disable ->
-        (* TODO: when SR attached that requires cluster stack this should not be present *)
-        rpc ctx @@ Cluster_host.disable ~self
+      (* TODO: when SR attached that requires cluster stack this should not be present *)
+      rpc ctx @@ Cluster_host.disable ~self
     | `destroy -> Lwt.return_unit
-        (* rpc_ctx @@ Cluster_host.destroy ~self *)
+    (* rpc_ctx @@ Cluster_host.destroy ~self *)
 end
 
 let todo msg =
@@ -162,10 +162,10 @@ module Cluster_test = struct
   let on_child ctx self op =
     contains ctx self
     >>= function
-      | child :: _ -> on_self ctx child op
-      | [] ->
-          debug (fun m -> m "no child objects: nothing to do") ;
-          Lwt.return_unit
+    | child :: _ -> on_self ctx child op
+    | [] ->
+      debug (fun m -> m "no child objects: nothing to do") ;
+      Lwt.return_unit
 
 
   let perform ctx self = function
@@ -196,21 +196,21 @@ module Pool_test = struct
     | `cluster_create -> (
         get_management_pifs ctx
         >>= function
-          | [] -> Lwt.fail_with "No management interface found"
-          | pif :: _ as pifs ->
-              debug (fun m -> m "Setting disallow unplug") ;
-              Lwt_list.iter_p
-                (fun self -> rpc ctx @@ PIF.set_disallow_unplug ~self ~value:true)
-                pifs
-              >>= fun () ->
-              rpc ctx @@ PIF.get_network ~self:pif
-              >>= fun network ->
-              rpc ctx
-              @@ Cluster.pool_create ~network ~cluster_stack:"corosync" ~token_timeout:20.0
-                   ~token_timeout_coefficient:1.0
-              >>= fun _ ->
-              info (fun m -> m "Created cluster") ;
-              Lwt.return_unit )
+        | [] -> Lwt.fail_with "No management interface found"
+        | pif :: _ as pifs ->
+          debug (fun m -> m "Setting disallow unplug") ;
+          Lwt_list.iter_p
+            (fun self -> rpc ctx @@ PIF.set_disallow_unplug ~self ~value:true)
+            pifs
+          >>= fun () ->
+          rpc ctx @@ PIF.get_network ~self:pif
+          >>= fun network ->
+          rpc ctx
+          @@ Cluster.pool_create ~network ~cluster_stack:"corosync" ~token_timeout:20.0
+            ~token_timeout_coefficient:1.0
+          >>= fun _ ->
+          info (fun m -> m "Created cluster") ;
+          Lwt.return_unit )
     | `ha_disable -> rpc ctx @@ Pool.disable_ha
     | `ha_enable -> rpc ctx @@ Pool.enable_ha ~heartbeat_srs:[] ~configuration:[]
 end
@@ -245,7 +245,7 @@ module SR_test = struct
     | `vdi_resize
     | `vdi_set_on_boot
     | `vdi_snapshot ]
-    [@@deriving rpc]
+  [@@deriving rpc]
 
   include SR
 
@@ -278,14 +278,14 @@ module SR_test = struct
     | `update -> rpc ctx @@ SR.update ~sr
     | `vdi_clone -> vdi ()
     | `vdi_create ->
-        rpc ctx
-        @@ VDI.create ~name_label ~name_description ~sR:sr ~virtual_size:65536L ~_type:`user
-             ~sharable:true ~read_only:false ~other_config:[] ~xenstore_data:[] ~sm_config:[] ~tags
-        >>= fun _ ->
-        rpc ctx
-        @@ VDI.create ~name_label ~name_description ~sR:sr ~virtual_size:65536L ~_type:`user
-             ~sharable:true ~read_only:false ~other_config:[] ~xenstore_data:[] ~sm_config:[] ~tags
-        >>= fun _ -> Lwt.return_unit
+      rpc ctx
+      @@ VDI.create ~name_label ~name_description ~sR:sr ~virtual_size:65536L ~_type:`user
+        ~sharable:true ~read_only:false ~other_config:[] ~xenstore_data:[] ~sm_config:[] ~tags
+      >>= fun _ ->
+      rpc ctx
+      @@ VDI.create ~name_label ~name_description ~sR:sr ~virtual_size:65536L ~_type:`user
+        ~sharable:true ~read_only:false ~other_config:[] ~xenstore_data:[] ~sm_config:[] ~tags
+      >>= fun _ -> Lwt.return_unit
     | `vdi_data_destroy -> vdi ()
     | `vdi_destroy -> vdi ()
     | `vdi_disable_cbt -> vdi ()
@@ -294,28 +294,28 @@ module SR_test = struct
     | `vdi_set_on_boot -> vdi ()
     | `vdi_snapshot -> vdi ()
     | `vdi_introduce ->
-        on_self ctx sr SR.get_VDIs
-        >>= fun vdis ->
-        Lwt_list.iter_p
-          (fun vdi ->
-            on_self ctx vdi @@ VDI.get_record
-            >>= fun vdir ->
-            rpc ctx @@ VDI.forget ~vdi
-            >>= fun () ->
-            rpc ctx
-            @@ VDI.introduce ~uuid:vdir.API.vDI_uuid ~name_label:vdir.API.vDI_name_label
-                 ~name_description:vdir.API.vDI_name_description ~_type:vdir.API.vDI_type
-                 ~sharable:vdir.API.vDI_sharable ~read_only:vdir.API.vDI_read_only
-                 ~other_config:vdir.API.vDI_other_config ~location:vdir.API.vDI_location
-                 ~sm_config:vdir.API.vDI_sm_config ~managed:vdir.API.vDI_managed
-                 ~virtual_size:vdir.API.vDI_virtual_size
-                 ~physical_utilisation:vdir.API.vDI_physical_utilisation
-                 ~metadata_of_pool:vdir.API.vDI_metadata_of_pool
-                 ~is_a_snapshot:vdir.API.vDI_is_a_snapshot
-                 ~snapshot_time:vdir.API.vDI_snapshot_time ~snapshot_of:vdir.API.vDI_snapshot_of
-                 ~sR:sr ~xenstore_data:vdir.API.vDI_xenstore_data
-            >>= fun _ -> Lwt.return_unit )
-          vdis
+      on_self ctx sr SR.get_VDIs
+      >>= fun vdis ->
+      Lwt_list.iter_p
+        (fun vdi ->
+           on_self ctx vdi @@ VDI.get_record
+           >>= fun vdir ->
+           rpc ctx @@ VDI.forget ~vdi
+           >>= fun () ->
+           rpc ctx
+           @@ VDI.introduce ~uuid:vdir.API.vDI_uuid ~name_label:vdir.API.vDI_name_label
+             ~name_description:vdir.API.vDI_name_description ~_type:vdir.API.vDI_type
+             ~sharable:vdir.API.vDI_sharable ~read_only:vdir.API.vDI_read_only
+             ~other_config:vdir.API.vDI_other_config ~location:vdir.API.vDI_location
+             ~sm_config:vdir.API.vDI_sm_config ~managed:vdir.API.vDI_managed
+             ~virtual_size:vdir.API.vDI_virtual_size
+             ~physical_utilisation:vdir.API.vDI_physical_utilisation
+             ~metadata_of_pool:vdir.API.vDI_metadata_of_pool
+             ~is_a_snapshot:vdir.API.vDI_is_a_snapshot
+             ~snapshot_time:vdir.API.vDI_snapshot_time ~snapshot_of:vdir.API.vDI_snapshot_of
+             ~sR:sr ~xenstore_data:vdir.API.vDI_xenstore_data
+           >>= fun _ -> Lwt.return_unit )
+        vdis
     | `vdi_resize -> vdi ()
     | `vdi_mirror -> todo "Seems unused"
 end
@@ -332,8 +332,8 @@ module VDI_test = struct
   let get_all ~rpc ~session_id =
     SR_test.get_all ~rpc ~session_id
     >>= Lwt_list.map_p (fun sr ->
-            let expr = Printf.sprintf {|field "SR" = "%s"|} (Ref.string_of sr) in
-            VDI.get_all_records_where ~rpc ~session_id ~expr )
+        let expr = Printf.sprintf {|field "SR" = "%s"|} (Ref.string_of sr) in
+        VDI.get_all_records_where ~rpc ~session_id ~expr )
     >>= fun vdis -> Lwt.return (vdis |> List.flatten |> List.rev_map fst)
 
 
@@ -349,12 +349,12 @@ module VDI_test = struct
     | `set_on_boot -> on_self ctx self @@ VDI.set_on_boot ~value:`reset
     | `snapshot -> rpc ctx @@ VDI.snapshot ~driver_params:[] ~vdi:self >>= fun _ -> Lwt.return_unit
     | `resize ->
-        (* sharable VDI cannot be resized *)
-        on_self ctx self VDI.get_virtual_size
-        >>= fun size -> rpc ctx @@ VDI.resize ~vdi:self ~size:(Int64.add size 65536L)
+      (* sharable VDI cannot be resized *)
+      on_self ctx self VDI.get_virtual_size
+      >>= fun size -> rpc ctx @@ VDI.resize ~vdi:self ~size:(Int64.add size 65536L)
     | `resize_online ->
-        on_self ctx self VDI.get_virtual_size
-        >>= fun size -> rpc ctx @@ VDI.resize_online ~vdi:self ~size:(Int64.add size 65536L)
+      on_self ctx self VDI.get_virtual_size
+      >>= fun size -> rpc ctx @@ VDI.resize_online ~vdi:self ~size:(Int64.add size 65536L)
     | `mirror -> todo "Seems unused?"
     | `forget -> rpc ctx @@ VDI.forget ~vdi:self
     | `copy -> todo "VDI.copy"
@@ -362,7 +362,7 @@ module VDI_test = struct
     | `blocked -> todo "??"
     | `generate_config -> todo "VDI.generate_config"
     | `force_unlock ->
-        todo "FIXME: doesn't work, MESSAGE_DEPRECATED, why is this part of allowed-ops?"
+      todo "FIXME: doesn't work, MESSAGE_DEPRECATED, why is this part of allowed-ops?"
     | `update -> rpc ctx @@ VDI.update ~vdi:self
 end
 
@@ -397,11 +397,11 @@ module Host_test = struct
 
 
   let skip_if_master ctx host f =
-      Context.get_pool_master ctx >>= fun (_, master) ->
-      if master = host then begin
-        debug (fun m -> m "Skipping host lifecycle operation on master");
-        Lwt.return_unit
-      end else f host
+    Context.get_pool_master ctx >>= fun (_, master) ->
+    if master = host then begin
+      debug (fun m -> m "Skipping host lifecycle operation on master");
+      Lwt.return_unit
+    end else f host
 
   let perform ctx host = function
     | `evacuate -> rpc ctx @@ Host.evacuate ~host
