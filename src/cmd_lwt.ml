@@ -17,11 +17,23 @@ let sync t =
   Xen_api_lwt_unix.(Context.(step t "Sync pool database" (fun ctx -> rpc ctx Pool.sync_database)))
 
 
-let prepare conf ~rollback =
+let do_clear_crashdumps t =
+  let open Xen_api_lwt_unix in
+  let open Context in
+  step t "Clearing crashdumps" @@ fun ctx ->
+  rpc ctx @@ Host_crashdump.get_all >>=
+  Lwt_list.iter_p (fun self  ->
+  rpc ctx @@ Host_crashdump.destroy ~self)
+
+
+let prepare conf ~rollback ~clear_crashdumps =
   handle_rollback conf ~rollback
   >>= fun () -> Test_sr.make_pool ~uname:conf.uname ~pwd:conf.pwd conf.hosts
   >>= fun t -> Test_sr.optimize_vms t
   >>= fun () -> sync t
+  >>= fun () ->
+  (if clear_crashdumps then do_clear_crashdumps t
+  else Lwt.return_unit)
   >>= fun () ->
   License.maybe_apply_license_pool t conf [Features.HA; Features.Corosync]
   >>= fun () ->
@@ -53,11 +65,19 @@ let rollback =
   let doc = "Rollback pool" in
   Arg.(value & flag & info ["rollback"] ~doc)
 
+let clear_crashdumps =
+  let doc = "Clear crashdumps" in
+  Arg.(value & flag & info ["clear-crashdumps"] ~doc)
+
+let skip_serial =
+  let doc = "Skip serial tests and go straight to the parallel ones" in
+  Arg.(value & flag & info ["skip-serial"] ~doc)
 
 let prepare ~common ~sdocs ~exits =
   let doc = "Prepare test environment (setup pool, snapshot pool)" in
-  let main () config rollback = lwt_main config (prepare ~rollback) in
-  ( Term.(const main $ common $ config $ rollback)
+  let main () config rollback clear_crashdumps =
+    lwt_main config (prepare ~rollback ~clear_crashdumps) in
+  ( Term.(const main $ common $ config $ rollback $ clear_crashdumps)
   , Term.info "prepare" ~doc ~sdocs ~exits )
 
 
@@ -65,8 +85,7 @@ let tests =
   let doc = "List of tests to run (default: all)" in
   Arg.(value & pos_all string [] & info [] ~docv:"TEST" ~doc)
 
-
-let run_tests conf tests =
+let run_tests conf skip_serial tests =
   let available =
     Allowed_ops.tests
     |> List.map (fun (module M : Allowed_ops.S) -> (M.name, (module M : Allowed_ops.S)))
@@ -82,11 +101,11 @@ let run_tests conf tests =
   Lwt_list.iter_s
     (fun (module M : Allowed_ops.S) ->
       Logs.info (fun m -> m "Executing %s test" M.name) ;
-      M.execute t )
+      M.execute ~skip_serial t )
     tests
 
 
 let run ~common ~sdocs ~exits =
   let doc = "Run tests in a prepared environment" in
-  let main () config tests = lwt_main config (fun conf -> run_tests conf tests) in
-  (Term.(const main $ common $ config $ tests), Term.info "run" ~doc ~sdocs ~exits)
+  let main () config skip_serial tests = lwt_main config (fun conf -> run_tests conf skip_serial tests) in
+  (Term.(const main $ common $ config $ skip_serial $ tests), Term.info "run" ~doc ~sdocs ~exits)
