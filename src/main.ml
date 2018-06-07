@@ -62,5 +62,6 @@ let () =
     eval_choice ~catch:true default_cmd
       [ Cmd_init.init ~sdocs ~exits ~common
       ; Cmd_lwt.prepare ~sdocs ~exits ~common
+      ; Cmd_lwt.rollback ~sdocs ~exits ~common
       ; Cmd_init.list ~sdocs ~exits ~common
       ; Cmd_lwt.run ~sdocs ~exits ~common ])

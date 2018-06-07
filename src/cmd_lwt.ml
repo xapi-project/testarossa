@@ -25,8 +25,15 @@ let do_clear_crashdumps t =
   Lwt_list.iter_p (fun self  ->
   rpc ctx @@ Host_crashdump.destroy ~self)
 
+let do_rollback conf =
+  handle_rollback conf ~rollback:true
+  >>= fun () ->
+  let master = List.hd conf.hosts |> Ipaddr.V4.to_string in
+  Context.with_login ~uname:conf.uname ~pwd:conf.pwd master (fun t ->
+      Context.step t "Wait for all hosts to be enabled" @@ fun ctx ->
+      Test_sr.wait_enabled ctx ())
 
-let prepare conf ~rollback ~clear_crashdumps =
+let do_prepare conf ~rollback ~clear_crashdumps =
   handle_rollback conf ~rollback
   >>= fun () -> Test_sr.make_pool ~uname:conf.uname ~pwd:conf.pwd conf conf.hosts
   >>= fun t -> Test_sr.optimize_vms t
@@ -76,10 +83,14 @@ let skip_serial =
 let prepare ~common ~sdocs ~exits =
   let doc = "Prepare test environment (setup pool, snapshot pool)" in
   let main () config rollback clear_crashdumps =
-    lwt_main config (prepare ~rollback ~clear_crashdumps) in
+    lwt_main config (do_prepare ~rollback ~clear_crashdumps) in
   ( Term.(const main $ common $ config $ rollback $ clear_crashdumps)
   , Term.info "prepare" ~doc ~sdocs ~exits )
 
+let rollback ~common ~sdocs ~exits =
+  let doc = "Rollback to snapshot" in
+  let main () config = lwt_main config do_rollback in
+  Term.(const main $ common $ config), Term.info "rollback" ~doc ~sdocs ~exits
 
 let tests =
   let doc = "List of tests to run (default: all)" in
