@@ -54,42 +54,58 @@ let device_config ?(provider= "iscsi") ~ip ~iqn ?scsiid () =
   in
   (match scsiid with Some id -> ("SCSIid", id) :: conf | None -> conf)
 
-let probe ctx ~iscsi ~iqn host =
-  (* probe as if it was an iSCSI SR, since we don't have probe for GFS2 yet *)
-  Lwt.catch
-    (fun () ->
-       debug (fun m -> m "Probing %a" Ipaddr.V4.pp_hum iscsi) ;
-       rpc ctx
-       @@ SR.probe ~host ~device_config:[("target", Ipaddr.V4.to_string iscsi); ("targetIQN", iqn)]
-         ~_type:"lvmoiscsi" ~sm_config:[] )
-    (fun e ->
-       match e with
-       | Api_errors.Server_error (_, [_; _; xml]) -> Lwt.return xml
-       | e ->
-         Logs.err (fun m -> m "Got another error: %s\n" (Printexc.to_string e)) ;
-         Lwt.fail_with "<bad xml>" )
-  >>= fun xml ->
-  let open Ezxmlm in
-  debug (fun m -> m "Got probe XML: %s" xml) ;
-  let _, xmlm = from_string xml in
-  let scsiid =
-    xmlm |> member "iscsi-target" |> member "LUN" |> member "SCSIid" |> data_to_string
-  in
-  debug (fun m -> m "SR Probed: SCSIid=%s\n%!" scsiid) ;
-  Lwt.return scsiid
-
-
 let create_gfs2_sr ctx ~iscsi ~iqn ?scsiid () =
   get_pool_master ctx
   >>= fun (_pool, master) ->
-  (match scsiid with None -> probe ctx ~iscsi ~iqn master | Some scsiid -> Lwt.return scsiid)
-  >>= fun scsiid ->
-  let device_config = device_config ~ip:iscsi ~iqn ~scsiid () in
-  debug (fun m -> m "Creating SR, device_config: %a" PP.dict device_config) ;
+  (* probe *)
+  let device_config =
+    [("provider", "iscsi"); ("target", Ipaddr.V4.to_string iscsi); ("targetIQN", iqn)]
+  in
   rpc ctx
-  @@ SR.create ~host:master ~device_config ~physical_size:0L ~name_label:"gfs2-sr"
-    ~name_description:"" ~_type:"gfs2" ~content_type:"" ~shared:true ~sm_config:[]
-
+  @@ SR.probe_ext ~host:master ~device_config ~_type:"gfs2" ~sm_config:[]
+  >>= function
+    | [] -> Lwt.fail_with "Probe found nothing, not even a SCSIid"
+    | probed :: _ ->
+      let device_config = probed.API.probe_result_configuration in
+      rpc ctx
+      @@ SR.probe_ext ~host:master ~device_config ~_type:"gfs2" ~sm_config:[]
+    >>= function
+    | [] -> Lwt.fail_with "Probe found nothing, not even a SCSIid"
+    | probed ->
+        let name_label = "gfs2-sr" in
+        let name_description = "" in
+        let _type = "gfs2" in
+        let content_type = "" in
+        let shared = true in
+        let sm_config = [] in
+        Lwt_list.filter_map_p
+          (fun probe ->
+            match probe.API.probe_result_sr with
+            | Some sr -> Lwt.return sr.API.sr_stat_uuid
+            | None -> Lwt.return_none )
+          probed
+        >>= function
+          | [] ->
+              info (fun m -> m "No SR: creating GFS2") ;
+              debug (fun m ->
+                  m "Creating SR, device_config: %a" PP.dict device_config ) ;
+              rpc ctx
+              @@ SR.create ~host:master ~device_config ~physical_size:0L
+                   ~name_label ~name_description ~_type ~content_type ~shared
+                   ~sm_config
+          | uuid :: _ ->
+              info (fun m -> m "Found SR, introducing %a" PP.dict device_config) ;
+              rpc ctx
+              @@ SR.introduce ~uuid ~name_label ~name_description ~_type
+                   ~content_type ~shared ~sm_config
+              >>= fun sR ->
+              rpc ctx
+              @@ PBD.create ~host:master ~sR ~device_config ~other_config:[]
+              >>= fun pBD ->
+              rpc ctx
+              @@ PBD.plug ~self:pBD
+              >>= fun () ->
+              Lwt.return sR
 
 let plug_pbds ctx ~sr =
   rpc ctx @@ SR.get_PBDs ~self:sr
