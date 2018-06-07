@@ -64,4 +64,6 @@ let () =
       ; Cmd_lwt.prepare ~sdocs ~exits ~common
       ; Cmd_lwt.rollback ~sdocs ~exits ~common
       ; Cmd_init.list ~sdocs ~exits ~common
-      ; Cmd_lwt.run ~sdocs ~exits ~common ])
+      ; Cmd_lwt.run ~sdocs ~exits ~common
+      ; Cmd_lwt.bonding ~sdocs ~exits ~common
+      ])

@@ -120,3 +120,8 @@ let run ~common ~sdocs ~exits =
   let doc = "Run tests in a prepared environment" in
   let main () config skip_serial tests = lwt_main config (fun conf -> run_tests conf skip_serial tests) in
   (Term.(const main $ common $ config $ skip_serial $ tests), Term.info "run" ~doc ~sdocs ~exits)
+
+let bonding ~common ~sdocs ~exits =
+  let doc = "Run bonding tests" in
+  let main () config = lwt_main config Cmd_bonding.run in
+  Term.(const main $ common $ config), Term.info "bonding" ~doc ~sdocs ~exits
