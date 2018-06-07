@@ -28,7 +28,7 @@ let do_clear_crashdumps t =
 
 let prepare conf ~rollback ~clear_crashdumps =
   handle_rollback conf ~rollback
-  >>= fun () -> Test_sr.make_pool ~uname:conf.uname ~pwd:conf.pwd conf.hosts
+  >>= fun () -> Test_sr.make_pool ~uname:conf.uname ~pwd:conf.pwd conf conf.hosts
   >>= fun t -> Test_sr.optimize_vms t
   >>= fun () -> sync t
   >>= fun () ->
@@ -96,7 +96,7 @@ let run_tests conf skip_serial tests =
     | [] -> Allowed_ops.tests
     | only -> List.map (fun name -> Astring.String.Map.get name available) only
   in
-  Test_sr.make_pool ~uname:conf.uname ~pwd:conf.pwd conf.hosts
+  Test_sr.make_pool ~uname:conf.uname ~pwd:conf.pwd conf conf.hosts
   >>= fun t ->
   Lwt_list.iter_s
     (fun (module M : Allowed_ops.S) ->

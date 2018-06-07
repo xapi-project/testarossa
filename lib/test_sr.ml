@@ -28,15 +28,13 @@ let enable_clustering t =
     debug (fun m -> m "All cluster hosts are enabled") ;
     Lwt.return cluster
   | [] ->
+    rpc ctx PIF.get_all >>= Lwt_list.iter_p (fun self ->
+        rpc ctx @@ PIF.set_disallow_unplug ~self ~value:true
+    ) >>= fun () ->
     get_management_pifs ctx
     >>= function
     | [] -> Lwt.fail_with "No management interface found"
     | pif :: _ as pifs ->
-      debug (fun m -> m "Setting disallow unplug") ;
-      Lwt_list.iter_p
-        (fun self -> rpc ctx @@ PIF.set_disallow_unplug ~self ~value:true)
-        pifs
-      >>= fun () ->
       rpc ctx @@ PIF.get_network ~self:pif
       >>= fun network ->
       debug (fun m -> m "Creating cluster on pool") ;
@@ -308,7 +306,7 @@ let fix_management_interfaces ctx =
   | [] -> Lwt.fail_with ("Cannot find PIF for master IP: " ^ ip)
 
 
-let make_pool ~uname ~pwd ips =
+let make_pool ~uname ~pwd conf ips =
   debug (fun m -> m "Getting masters before pool join");
   Lwt_list.map_p (get_master ~uname ~pwd) ips
   >>= fun masters ->
@@ -324,6 +322,11 @@ let make_pool ~uname ~pwd ips =
     slaves
     |> Lwt_list.iter_p (fun ip ->
         with_login ~uname ~pwd (Ipaddr.V4.to_string ip) (fun t ->
+            step t "Apply license if needed" (fun ctx ->
+                get_pool_master ctx
+                >>= fun (_, host) ->
+                License.maybe_license_host ctx conf host)
+            >>= fun () ->
             step t "Pool join"
             @@ fun ctx ->
             rpc ctx @@ Pool.join ~master_address ~master_username:uname ~master_password:pwd
