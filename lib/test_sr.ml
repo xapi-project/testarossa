@@ -338,6 +338,14 @@ let make_pool ~uname ~pwd conf ips =
                 >>= fun (_, host) ->
                 License.maybe_license_host ctx conf host)
             >>= fun () ->
+            step t "Detach shared SRs" (fun ctx ->
+                  rpc ctx @@ SR.get_all_records
+                  >>= Lwt_list.iter_p (fun (sr, srr) ->
+                      if srr.API.sR_shared then
+                        detach_sr ctx ~sr
+                      else
+                        Lwt.return_unit)
+            ) >>= fun () ->
             step t "Pool join"
             @@ fun ctx ->
             rpc ctx @@ Pool.join ~master_address ~master_username:uname ~master_password:pwd
