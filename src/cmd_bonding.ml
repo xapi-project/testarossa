@@ -47,7 +47,9 @@ let ensure_vhost_nics conf =
             >>= fun vif ->
             debug (fun m -> m "VIF %s created" (Ref.string_of vif));
             (* can't hotplug due to pure HVM mode *)
-            rpc ctx @@ VM.hard_reboot ~vm
+            rpc ctx @@ VM.hard_shutdown ~vm
+            >>= fun () ->
+            rpc ctx @@ VM.start ~start_paused:false ~force:false ~vm
           | _ -> Lwt.return_unit
       )
   )
