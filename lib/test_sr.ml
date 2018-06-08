@@ -52,13 +52,24 @@ let device_config ?(provider= "iscsi") ~ip ~iqn ?scsiid () =
   in
   (match scsiid with Some id -> ("SCSIid", id) :: conf | None -> conf)
 
-let create_gfs2_sr ctx ~iscsi ~iqn ?scsiid () =
+let create_gfs2_sr ctx ~iscsi ?iqn ?scsiid () =
   get_pool_master ctx
   >>= fun (_pool, master) ->
   (* probe *)
-  let device_config =
-    [("provider", "iscsi"); ("target", Ipaddr.V4.to_string iscsi); ("targetIQN", iqn)]
+  let probe_iqn device_config =
+    match iqn with
+    | Some iqn ->
+      Lwt.return (("targetIQN", iqn) :: device_config)
+    | None ->
+      rpc ctx @@ SR.probe_ext ~host:master ~device_config ~_type:"gfs2" ~sm_config:[]
+      >>= function
+      | [] -> Lwt.fail_with "Probe found nothing, not even a SCSIid"
+      | probed :: _ ->
+        Lwt.return probed.API.probe_result_configuration
   in
+  let device_config =
+    [("provider", "iscsi"); ("target", Ipaddr.V4.to_string iscsi)] in
+  probe_iqn device_config >>= fun device_config ->
   rpc ctx
   @@ SR.probe_ext ~host:master ~device_config ~_type:"gfs2" ~sm_config:[]
   >>= function
@@ -120,7 +131,7 @@ let plug_pbds ctx ~sr =
     pbds
 
 
-let get_gfs2_sr t ~iscsi ~iqn ?scsiid () =
+let get_gfs2_sr t ~iscsi ?iqn ?scsiid () =
   step t "GFS2 SR"
   @@ fun ctx ->
   debug (fun m -> m "Looking for GFS2 SR") ;
@@ -129,7 +140,7 @@ let get_gfs2_sr t ~iscsi ~iqn ?scsiid () =
   | (sr, _) :: _ ->
     debug (fun m -> m "Found existing GFS2 SR") ;
     plug_pbds ctx ~sr >>= fun () -> Lwt.return sr
-  | [] -> create_gfs2_sr ctx ~iscsi ~iqn ?scsiid ()
+  | [] -> create_gfs2_sr ctx ~iscsi ?iqn ?scsiid ()
 
 
 let do_ha t sr =

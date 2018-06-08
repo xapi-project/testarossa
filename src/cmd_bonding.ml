@@ -91,9 +91,9 @@ let do_prepare conf =
   >>= fun () ->
   Test_sr.enable_clustering t
   >>= fun _cluster ->
-  (match (conf.iscsi, conf.iqn) with
-  | Some iscsi, Some iqn ->
-      Test_sr.get_gfs2_sr t ~iscsi ~iqn ?scsiid:conf.scsiid () >>= fun _gfs2 -> Lwt.return_unit
+  (match conf.iscsi with
+  | Some iscsi ->
+      Test_sr.get_gfs2_sr t ~iscsi ?iqn:conf.iqn ?scsiid:conf.scsiid () >>= fun _gfs2 -> Lwt.return_unit
   | _ -> Lwt.return_unit)
   >>= fun () ->
   Test_sr.make_pool ~uname:conf.uname ~pwd:conf.pwd conf conf.hosts)
