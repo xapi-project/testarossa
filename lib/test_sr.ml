@@ -28,15 +28,13 @@ let enable_clustering t =
     debug (fun m -> m "All cluster hosts are enabled") ;
     Lwt.return cluster
   | [] ->
+    rpc ctx PIF.get_all >>= Lwt_list.iter_p (fun self ->
+        rpc ctx @@ PIF.set_disallow_unplug ~self ~value:true
+    ) >>= fun () ->
     get_management_pifs ctx
     >>= function
     | [] -> Lwt.fail_with "No management interface found"
     | pif :: _ as pifs ->
-      debug (fun m -> m "Setting disallow unplug") ;
-      Lwt_list.iter_p
-        (fun self -> rpc ctx @@ PIF.set_disallow_unplug ~self ~value:true)
-        pifs
-      >>= fun () ->
       rpc ctx @@ PIF.get_network ~self:pif
       >>= fun network ->
       debug (fun m -> m "Creating cluster on pool") ;
@@ -54,42 +52,69 @@ let device_config ?(provider= "iscsi") ~ip ~iqn ?scsiid () =
   in
   (match scsiid with Some id -> ("SCSIid", id) :: conf | None -> conf)
 
-let probe ctx ~iscsi ~iqn host =
-  (* probe as if it was an iSCSI SR, since we don't have probe for GFS2 yet *)
-  Lwt.catch
-    (fun () ->
-       debug (fun m -> m "Probing %a" Ipaddr.V4.pp_hum iscsi) ;
-       rpc ctx
-       @@ SR.probe ~host ~device_config:[("target", Ipaddr.V4.to_string iscsi); ("targetIQN", iqn)]
-         ~_type:"lvmoiscsi" ~sm_config:[] )
-    (fun e ->
-       match e with
-       | Api_errors.Server_error (_, [_; _; xml]) -> Lwt.return xml
-       | e ->
-         Logs.err (fun m -> m "Got another error: %s\n" (Printexc.to_string e)) ;
-         Lwt.fail_with "<bad xml>" )
-  >>= fun xml ->
-  let open Ezxmlm in
-  debug (fun m -> m "Got probe XML: %s" xml) ;
-  let _, xmlm = from_string xml in
-  let scsiid =
-    xmlm |> member "iscsi-target" |> member "LUN" |> member "SCSIid" |> data_to_string
-  in
-  debug (fun m -> m "SR Probed: SCSIid=%s\n%!" scsiid) ;
-  Lwt.return scsiid
-
-
-let create_gfs2_sr ctx ~iscsi ~iqn ?scsiid () =
+let create_gfs2_sr ctx ~iscsi ?iqn ?scsiid () =
   get_pool_master ctx
   >>= fun (_pool, master) ->
-  (match scsiid with None -> probe ctx ~iscsi ~iqn master | Some scsiid -> Lwt.return scsiid)
-  >>= fun scsiid ->
-  let device_config = device_config ~ip:iscsi ~iqn ~scsiid () in
-  debug (fun m -> m "Creating SR, device_config: %a" PP.dict device_config) ;
+  (* probe *)
+  let probe_iqn device_config =
+    match iqn with
+    | Some iqn ->
+      Lwt.return (("targetIQN", iqn) :: device_config)
+    | None ->
+      rpc ctx @@ SR.probe_ext ~host:master ~device_config ~_type:"gfs2" ~sm_config:[]
+      >>= function
+      | [] -> Lwt.fail_with "Probe found nothing, not even a SCSIid"
+      | probed :: _ ->
+        Lwt.return probed.API.probe_result_configuration
+  in
+  let device_config =
+    [("provider", "iscsi"); ("target", Ipaddr.V4.to_string iscsi)] in
+  probe_iqn device_config >>= fun device_config ->
   rpc ctx
-  @@ SR.create ~host:master ~device_config ~physical_size:0L ~name_label:"gfs2-sr"
-    ~name_description:"" ~_type:"gfs2" ~content_type:"" ~shared:true ~sm_config:[]
-
+  @@ SR.probe_ext ~host:master ~device_config ~_type:"gfs2" ~sm_config:[]
+  >>= function
+    | [] -> Lwt.fail_with "Probe found nothing, not even a SCSIid"
+    | probed :: _ ->
+      let device_config = probed.API.probe_result_configuration in
+      rpc ctx
+      @@ SR.probe_ext ~host:master ~device_config ~_type:"gfs2" ~sm_config:[]
+    >>= function
+    | [] -> Lwt.fail_with "Probe found nothing, not even a SCSIid"
+    | probed ->
+        let name_label = "gfs2-sr" in
+        let name_description = "" in
+        let _type = "gfs2" in
+        let content_type = "" in
+        let shared = true in
+        let sm_config = [] in
+        Lwt_list.filter_map_p
+          (fun probe ->
+            match probe.API.probe_result_sr with
+            | Some sr -> Lwt.return sr.API.sr_stat_uuid
+            | None -> Lwt.return_none )
+          probed
+        >>= function
+          | [] ->
+              info (fun m -> m "No SR: creating GFS2") ;
+              debug (fun m ->
+                  m "Creating SR, device_config: %a" PP.dict device_config ) ;
+              rpc ctx
+              @@ SR.create ~host:master ~device_config ~physical_size:0L
+                   ~name_label ~name_description ~_type ~content_type ~shared
+                   ~sm_config
+          | uuid :: _ ->
+              info (fun m -> m "Found SR, introducing %a" PP.dict device_config) ;
+              rpc ctx
+              @@ SR.introduce ~uuid ~name_label ~name_description ~_type
+                   ~content_type ~shared ~sm_config
+              >>= fun sR ->
+              rpc ctx
+              @@ PBD.create ~host:master ~sR ~device_config ~other_config:[]
+              >>= fun pBD ->
+              rpc ctx
+              @@ PBD.plug ~self:pBD
+              >>= fun () ->
+              Lwt.return sR
 
 let plug_pbds ctx ~sr =
   rpc ctx @@ SR.get_PBDs ~self:sr
@@ -106,7 +131,7 @@ let plug_pbds ctx ~sr =
     pbds
 
 
-let get_gfs2_sr t ~iscsi ~iqn ?scsiid () =
+let get_gfs2_sr t ~iscsi ?iqn ?scsiid () =
   step t "GFS2 SR"
   @@ fun ctx ->
   debug (fun m -> m "Looking for GFS2 SR") ;
@@ -115,7 +140,7 @@ let get_gfs2_sr t ~iscsi ~iqn ?scsiid () =
   | (sr, _) :: _ ->
     debug (fun m -> m "Found existing GFS2 SR") ;
     plug_pbds ctx ~sr >>= fun () -> Lwt.return sr
-  | [] -> create_gfs2_sr ctx ~iscsi ~iqn ?scsiid ()
+  | [] -> create_gfs2_sr ctx ~iscsi ?iqn ?scsiid ()
 
 
 let do_ha t sr =
@@ -292,7 +317,7 @@ let fix_management_interfaces ctx =
   | [] -> Lwt.fail_with ("Cannot find PIF for master IP: " ^ ip)
 
 
-let make_pool ~uname ~pwd ips =
+let make_pool ~uname ~pwd conf ips =
   debug (fun m -> m "Getting masters before pool join");
   Lwt_list.map_p (get_master ~uname ~pwd) ips
   >>= fun masters ->
@@ -308,6 +333,19 @@ let make_pool ~uname ~pwd ips =
     slaves
     |> Lwt_list.iter_p (fun ip ->
         with_login ~uname ~pwd (Ipaddr.V4.to_string ip) (fun t ->
+            step t "Apply license if needed" (fun ctx ->
+                get_pool_master ctx
+                >>= fun (_, host) ->
+                License.maybe_license_host ctx conf host)
+            >>= fun () ->
+            step t "Detach shared SRs" (fun ctx ->
+                  rpc ctx @@ SR.get_all_records
+                  >>= Lwt_list.iter_p (fun (sr, srr) ->
+                      if srr.API.sR_shared then
+                        detach_sr ctx ~sr
+                      else
+                        Lwt.return_unit)
+            ) >>= fun () ->
             step t "Pool join"
             @@ fun ctx ->
             rpc ctx @@ Pool.join ~master_address ~master_username:uname ~master_password:pwd
@@ -322,6 +360,40 @@ let make_pool ~uname ~pwd ips =
             debug (fun m ->
                 m "All hosts enabled in the pool, master is: %a" Ipaddr.V4.pp_hum master ) ;
             Lwt.return t ) )
+
+let destroy_pools ~uname ~pwd ips =
+  let destroy_pool master =
+    let ipstr = Ipaddr.V4.to_string master in
+    with_login ~uname ~pwd ipstr (fun t ->
+        step t (Printf.sprintf "Unplug PBDs on %s" ipstr) (fun ctx ->
+            rpc ctx @@ PBD.get_all_records
+            >>= Lwt_list.iter_p (fun (pbd, pbdr) ->
+                if pbdr.API.pBD_currently_attached then
+                  rpc ctx @@ PBD.unplug ~self:pbd
+                else Lwt.return_unit
+             )
+        ) >>= fun () ->
+        step t (Printf.sprintf "Destroy cluster if any on %s" ipstr) (fun ctx ->
+            rpc ctx @@ Cluster.get_all
+            >>= Lwt_list.iter_s (fun self ->
+                rpc ctx @@ Cluster.pool_force_destroy ~self
+              )
+        ) >>= fun () ->
+        step t (Printf.sprintf "Pool eject on %s's pool" ipstr) @@ fun ctx ->
+        rpc ctx @@ Host.get_all_records
+        >>= Lwt_list.iter_s (fun (host, hostr) ->
+          debug (fun m -> m "Host %s is %s" (Ref.string_of host) hostr.API.host_name_label);
+          if hostr.API.host_address <> ipstr then
+            rpc ctx @@ Pool.eject ~host
+          else Lwt.return_unit
+        )
+      )
+  in
+  debug (fun m -> m "Destroying pool(s)");
+  Lwt_list.map_p (get_master ~uname ~pwd) ips
+  >>= fun masters ->
+  List.sort_uniq Ipaddr.V4.compare masters
+  |> Lwt_list.iter_p destroy_pool
 
 let find_templates ctx label =
   rpc ctx @@ VM.get_by_name_label ~label

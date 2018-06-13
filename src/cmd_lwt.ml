@@ -25,10 +25,17 @@ let do_clear_crashdumps t =
   Lwt_list.iter_p (fun self  ->
   rpc ctx @@ Host_crashdump.destroy ~self)
 
+let do_rollback conf =
+  handle_rollback conf ~rollback:true
+  >>= fun () ->
+  let master = List.hd conf.hosts |> Ipaddr.V4.to_string in
+  Context.with_login ~uname:conf.uname ~pwd:conf.pwd master (fun t ->
+      Context.step t "Wait for all hosts to be enabled" @@ fun ctx ->
+      Test_sr.wait_enabled ctx ())
 
-let prepare conf ~rollback ~clear_crashdumps =
+let do_prepare conf ~rollback ~clear_crashdumps =
   handle_rollback conf ~rollback
-  >>= fun () -> Test_sr.make_pool ~uname:conf.uname ~pwd:conf.pwd conf.hosts
+  >>= fun () -> Test_sr.make_pool ~uname:conf.uname ~pwd:conf.pwd conf conf.hosts
   >>= fun t -> Test_sr.optimize_vms t
   >>= fun () -> sync t
   >>= fun () ->
@@ -39,11 +46,10 @@ let prepare conf ~rollback ~clear_crashdumps =
   >>= fun () ->
   Test_sr.enable_clustering t
   >>= fun _cluster ->
-  match (conf.iscsi, conf.iqn) with
-  | Some iscsi, Some iqn ->
-      Test_sr.get_gfs2_sr t ~iscsi ~iqn ?scsiid:conf.scsiid () >>= fun _gfs2 -> Lwt.return_unit
+  match conf.iscsi with
+  | Some iscsi ->
+      Test_sr.get_gfs2_sr t ~iscsi ?iqn:conf.iqn ?scsiid:conf.scsiid () >>= fun _gfs2 -> Lwt.return_unit
   | _ -> Lwt.return_unit
-
 
 let lwt_main config f =
   Lwt_main.run (
@@ -76,10 +82,14 @@ let skip_serial =
 let prepare ~common ~sdocs ~exits =
   let doc = "Prepare test environment (setup pool, snapshot pool)" in
   let main () config rollback clear_crashdumps =
-    lwt_main config (prepare ~rollback ~clear_crashdumps) in
+    lwt_main config (do_prepare ~rollback ~clear_crashdumps) in
   ( Term.(const main $ common $ config $ rollback $ clear_crashdumps)
   , Term.info "prepare" ~doc ~sdocs ~exits )
 
+let rollback ~common ~sdocs ~exits =
+  let doc = "Rollback to snapshot" in
+  let main () config = lwt_main config do_rollback in
+  Term.(const main $ common $ config), Term.info "rollback" ~doc ~sdocs ~exits
 
 let tests =
   let doc = "List of tests to run (default: all)" in
@@ -96,7 +106,7 @@ let run_tests conf skip_serial tests =
     | [] -> Allowed_ops.tests
     | only -> List.map (fun name -> Astring.String.Map.get name available) only
   in
-  Test_sr.make_pool ~uname:conf.uname ~pwd:conf.pwd conf.hosts
+  Test_sr.make_pool ~uname:conf.uname ~pwd:conf.pwd conf conf.hosts
   >>= fun t ->
   Lwt_list.iter_s
     (fun (module M : Allowed_ops.S) ->
@@ -109,3 +119,8 @@ let run ~common ~sdocs ~exits =
   let doc = "Run tests in a prepared environment" in
   let main () config skip_serial tests = lwt_main config (fun conf -> run_tests conf skip_serial tests) in
   (Term.(const main $ common $ config $ skip_serial $ tests), Term.info "run" ~doc ~sdocs ~exits)
+
+let bonding ~common ~sdocs ~exits =
+  let doc = "Run bonding tests" in
+  let main () config = lwt_main config Cmd_bonding.run in
+  Term.(const main $ common $ config), Term.info "bonding" ~doc ~sdocs ~exits
