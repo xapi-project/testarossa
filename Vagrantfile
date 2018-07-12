@@ -4,7 +4,7 @@
 # Vagrantfile API/syntax version. Don't touch unless you know what you're doing!
 VAGRANTFILE_API_VERSION = "2"
 
-LOCAL_BRANCH = ENV.fetch("LOCAL_BRANCH", "feature-REQ477-master")
+LOCAL_BRANCH = ENV.fetch("LOCAL_BRANCH", "team-ring3-master")
 
 USER = ENV.fetch("USER")
 folders = {
@@ -83,7 +83,7 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
 #  end
 
 # Defines cluster{1,2,3} for corosync investigation
-  N = 64
+  N = 16
   NAMES = Hash[ (1..N).map{|i| [i, "cluster#{i}"]} ]
   (1..N).each do |i|
     hostname = NAMES[i]
