@@ -2,6 +2,9 @@
 - name: disable XAPI-NBD path activation
   systemd: enabled=no masked=yes name=xapi-nbd.path
 
+- name: disable ntpdate
+  systemd: enabled=no masked=yes name=ntpdate
+
 - name: Generate xapissl.pem
   command: /opt/xensource/libexec/generate_ssl_cert /etc/xensource/xapi-ssl.pem {{inventory_hostname}}
   args:
