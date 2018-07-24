@@ -24,7 +24,7 @@
 
 # Note: if upgrading a live system would need to stop the cluster or at least disable fencing first
 - name: Run xapi-clusterd
-  systemd: state=started enabled=yes name=xapi-clusterd
+  systemd: enabled=yes name=xapi-clusterd
 
 # We are going to fence in the tests, make sure we don't loose all the
 # provisioning after a reboot
