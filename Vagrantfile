@@ -26,7 +26,7 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
   config.vm.define "infrastructure" do |infra|
     infra.vm.box = "jonludlam/xs-centos-7"
     infra.vm.provision "shell", path: "scripts/infra/vagrant_provision.sh"
-    infra.vm.synced_folder "scripts/infra", "/scripts", type: "rsync", rsync__args: ["--verbose", "--archive", "-z", "--copy-links"]
+    infra.vm.synced_folder "scripts/infra", "/scripts", type: "rsync", rsync__args: ["--whole-file", "--verbose", "--itemize-changes", "--ignore-times", "--archive", "-z", "--copy-links"]
     infra.vm.network "public_network", bridge: "xenbr0"
     config.vm.provider "xenserver" do |xs|
         xs.name = "#{USER}/infrastructure/#{infra.vm.box}"
@@ -91,8 +91,8 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
     config.vm.define hostname do |host|
       host.vm.box = "jonludlam/#{LOCAL_BRANCH}"
       host.vm.network "public_network", bridge: "xenbr0"
-      folders.each { |k,v| host.vm.synced_folder k, v, type: "rsync", rsync__args: ["--verbose", "--archive", "-z", "--copy-links"] }
-      host.vm.synced_folder "scripts", "/scripts", type:"rsync", rsync__args: ["--verbose", "--archive", "-z", "--copy-links"]
+      folders.each { |k,v| host.vm.synced_folder k, v, type: "rsync", rsync__args: ["--whole-file", "--verbose", "--itemize-changes", "--ignore-times", "--archive", "-z", "--copy-links"] }
+      host.vm.synced_folder "scripts", "/scripts", type:"rsync", rsync__args: ["--whole-file", "--verbose", "--itemize-changes", "--ignore-times", "--archive", "-z", "--copy-links"]
       config.vm.provider "xenserver" do |xs|
         xs.name = "#{USER}/#{hostname}/#{host.vm.box}"
       end
@@ -115,8 +115,8 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
     config.vm.define hostname do |host|
       host.vm.box = "jonludlam/#{LOCAL_BRANCH}"
       host.vm.network "public_network", bridge: "xenbr0"
-      folders.each { |k,v| host.vm.synced_folder k, v, type: "rsync", rsync__args: ["--verbose", "--archive", "-z", "--copy-links"] }
-      host.vm.synced_folder "scripts", "/scripts", type:"rsync", rsync__args: ["--verbose", "--archive", "-z", "--copy-links"]
+      folders.each { |k,v| host.vm.synced_folder k, v, type: "rsync", rsync__args: ["--whole-file", "--verbose", "--itemize-changes", "--ignore-times", "--archive", "-z", "--copy-links"] }
+      host.vm.synced_folder "scripts", "/scripts", type:"rsync", rsync__args: ["--whole-file", "--verbose", "--itemize-changes", "--ignore-times", "--archive", "-z", "--copy-links"]
       config.vm.provider "xenserver" do |xs|
         xs.name = "#{USER}/#{hostname}/#{host.vm.box}"
       end
