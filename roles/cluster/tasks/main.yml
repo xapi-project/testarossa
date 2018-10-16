@@ -26,6 +26,21 @@
 - name: Run xapi-clusterd
   systemd: enabled=yes name=xapi-clusterd
 
+# Disabling the crashdump so that xensource.log entries in the physical host accurately reflect when nodes fenced
+#- name: Disable crashdump
+#  command: "sed -i 's/multiboot2\\(.*\\) crashkernel=.*,below=[0-9]\\+[A-Z]\\+\\(.*\\)/multiboot2\\1\\2/' /boot/grub/grub.cfg"
+
+# Changing the default boot config to use the serial console
+- name: Use Serial Console
+  lineinfile:
+    path: /boot/grub/grub.cfg
+    regexp: '^set default='
+    line: 'set default=1'
+
+# Change timestamp format for Xen-related events in serial console
+- name: Change serial console timestamps
+  command: "sed -i 's/xen.gz com1/xen.gz console_timestamps=datems com1/' /boot/grub/grub.cfg"
+
 # We are going to fence in the tests, make sure we don't loose all the
 # provisioning after a reboot
 - name: Sync
