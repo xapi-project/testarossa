@@ -69,7 +69,7 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
 #  (1..3).each do |i|
 #    hostname = "host#{i}"
 #    config.vm.define hostname do |host|
-#      host.vm.box = "jonludlam/#{LOCAL_BRANCH}"
+#      host.vm.box = "xenserver/#{LOCAL_BRANCH}"
 #      host.vm.provision "shell",
 #        inline: "hostname host#{i}; echo #{hostname} > /etc/hostname"
 #      folders.each { |k,v| host.vm.synced_folder k, v, type: "rsync", rsync__args: ["--verbose", "--archive", "-z", "--copy-links"] }
@@ -89,7 +89,7 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
   (1..N).each do |i|
     hostname = NAMES[i]
     config.vm.define hostname do |host|
-      host.vm.box = "jonludlam/#{LOCAL_BRANCH}"
+      host.vm.box = "xenserver/#{LOCAL_BRANCH}"
       host.vm.network "public_network", bridge: "xenbr0"
       folders.each { |k,v| host.vm.synced_folder k, v, type: "rsync", rsync__args: ["--verbose", "--archive", "-z", "--copy-links"] }
       host.vm.synced_folder "scripts", "/scripts", type:"rsync", rsync__args: ["--verbose", "--archive", "-z", "--copy-links"]
@@ -113,7 +113,7 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
   (1..XN).each do |i|
     hostname = XNAMES[i]
     config.vm.define hostname do |host|
-      host.vm.box = "jonludlam/#{LOCAL_BRANCH}"
+      host.vm.box = "xenserver/#{LOCAL_BRANCH}"
       host.vm.network "public_network", bridge: "xenbr0"
       folders.each { |k,v| host.vm.synced_folder k, v, type: "rsync", rsync__args: ["--verbose", "--archive", "-z", "--copy-links"] }
       host.vm.synced_folder "scripts", "/scripts", type:"rsync", rsync__args: ["--verbose", "--archive", "-z", "--copy-links"]
