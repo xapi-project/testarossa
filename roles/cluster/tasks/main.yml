@@ -27,8 +27,8 @@
   systemd: enabled=yes name=xapi-clusterd
 
 # Disabling the crashdump so that xensource.log entries in the physical host accurately reflect when nodes fenced
-#- name: Disable crashdump
-#  command: "sed -i 's/multiboot2\\(.*\\) crashkernel=.*,below=[0-9]\\+[A-Z]\\+\\(.*\\)/multiboot2\\1\\2/' /boot/grub/grub.cfg"
+- name: Disable crashdump
+  command: "sed -i 's/multiboot2\\(.*\\) crashkernel=.*,below=[0-9]\\+[A-Z]\\+\\(.*\\)/multiboot2\\1\\2/' /boot/grub/grub.cfg"
 
 # Changing the default boot config to use the serial console
 - name: Use Serial Console
