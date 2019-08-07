@@ -4,9 +4,9 @@ maintainer: "xen-api@lists.xen.org"
 homepage: "https://github.com/xapi-project/testarossa"
 bug-reports: "https://github.com/xapi-project/testarossa/issues"
 dev-repo: "https://github.com/xapi-project/testarossa.git"
-build: [[ "jbuilder" "build" "-p" name "-j" jobs ]]
+build: [[ "dune" "build" "-p" name "-j" jobs ]]
 depends: [
-    "jbuilder" {build}
+    "dune" {build & >= "1.0"}
     "alcotest-lwt"
     "astring"
     "cmdliner"

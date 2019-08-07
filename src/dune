@@ -1,5 +1,4 @@
 (* -*- tuareg -*- *)
-#require "unix"
 
 let flags = function
   | [] -> ""
@@ -7,31 +6,27 @@ let flags = function
     let cmd = "ocamlfind ocamlc -verbose" ^ (
         List.fold_left (fun acc pkg -> acc ^ " -package " ^ pkg) "" pkgs
       ) in
-    let ic = Unix.open_process_in
+    let ic = Jbuild_plugin.V1.run_and_read_lines
         (cmd ^ " | grep -oEe '-ppx (\"([^\"\\]|\\.)+\"|\\w+)'")
     in
-    let rec go ic acc =
-      try go ic (acc ^ " " ^ input_line ic) with End_of_file -> close_in ic; acc
-    in
-    go ic ""
+    String.concat " " ic
 
 let rewriters = ["ppx_deriving_rpc"]
 let flags = flags rewriters
 
 let () = Printf.ksprintf Jbuild_plugin.V1.send {|
-(jbuild_version 1)
 (executable
- ((name main)
+ (name main)
   (public_name testarossa_test)
   (flags (:standard -safe-string %s))
-  (libraries (cmdliner
-              fmt.tty
-              logs
-              logs.cli
-              logs.fmt
-              ppx_deriving_rpc
-              rpclib
-              rpclib.json
-              rresult
-              testarossa))))
+  (libraries cmdliner
+             fmt.tty
+             logs
+             logs.cli
+             logs.fmt
+             ppx_deriving_rpc
+             rpclib
+             rpclib.json
+             rresult
+             testarossa))
 |} flags
